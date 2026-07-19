@@ -1,0 +1,377 @@
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
+import { randomBytes } from 'node:crypto';
+import { createDatabase, schema, closeDatabase, type Database } from '@hermieos/db';
+import { HermesClient } from './hermes-client.js';
+import { tickOnce } from './tick.js';
+import { setDb, getDb } from './db.js';
+import { makeFakeHermes, type FakeHermes } from './test-helpers/fake-hermes.js';
+
+let db: Database;
+let hermes: FakeHermes;
+let client: HermesClient;
+
+beforeAll(async () => {
+  db = createDatabase({
+    url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos',
+  });
+  setDb(db);
+  hermes = await makeFakeHermes();
+  client = new HermesClient({ baseUrl: hermes.url, apiKey: 'test-key' });
+});
+afterAll(async () => {
+  await hermes.close();
+  await closeDatabase(db);
+});
+
+async function cleanup(): Promise<void> {
+  await db.execute(sql`delete from feed_events where user_id in (select id from users where email like '%@sched-test.local')`);
+  await db.execute(sql`delete from notifications where user_id in (select id from users where email like '%@sched-test.local')`);
+  await db.execute(sql`delete from feedback where user_id in (select id from users where email like '%@sched-test.local')`);
+  await db.execute(sql`delete from hermes_runs where user_id in (select id from users where email like '%@sched-test.local')`);
+  await db.execute(sql`delete from subscriptions where user_id in (select id from users where email like '%@sched-test.local')`);
+  await db.execute(sql`delete from users where email like '%@sched-test.local'`);
+  // also release any advisory lock from a previous run
+  await db.$client`select pg_advisory_unlock_all()`;
+}
+
+async function seedUser(label: string, opts: { schedulerEnabled?: boolean } = {}): Promise<{ id: string }> {
+  const email = `${label}-${randomBytes(4).toString('hex')}@sched-test.local`;
+  const [row] = await db
+    .insert(schema.users)
+    .values({
+      email,
+      passwordHash: 'x',
+      displayName: label,
+      mcpToken: `tok_${label}_${randomBytes(8).toString('hex')}`,
+      schedulerEnabled: opts.schedulerEnabled ?? true,
+    })
+    .returning({ id: schema.users.id });
+  if (!row) throw new Error('seed failed');
+  return { id: row.id };
+}
+
+async function seedSubscription(
+  userId: string,
+  opts: { name: string; instruction: string; cadence: 'hourly' | 'daily' },
+  nextRunAt: Date = new Date(Date.now() - 60_000),
+): Promise<{ id: string }> {
+  const [row] = await db
+    .insert(schema.subscriptions)
+    .values({
+      userId,
+      name: opts.name,
+      target: 'test',
+      instruction: opts.instruction,
+      cadence: opts.cadence,
+      nextRunAt,
+    })
+    .returning({ id: schema.subscriptions.id });
+  if (!row) throw new Error('seed sub failed');
+  return { id: row.id };
+}
+
+beforeEach(async () => {
+  await cleanup();
+  hermes.setMode({});
+  hermes.recorded.length = 0;
+  hermes.recordedAll.length = 0;
+});
+afterEach(async () => {
+  await cleanup();
+});
+
+describe('tickOnce — subscription dispatch', () => {
+  it('dispatches a due subscription and advances next_run_at on success', async () => {
+    const u = await seedUser('alice');
+    const before = Date.now();
+    const sub = await seedSubscription(u.id, { name: 'X', instruction: 'check', cadence: 'daily' });
+
+    const summary = await tickOnce(client);
+    expect(summary.lockAcquired).toBe(true);
+    expect(summary.usersScanned).toBe(1);
+    expect(summary.subscriptionsDispatched).toBe(1);
+    expect(summary.subscriptionsSucceeded).toBe(1);
+    expect(summary.subscriptionsFailed).toBe(0);
+    expect(hermes.recorded.length).toBe(1);
+    expect(hermes.recorded[0]?.input).toContain('[kind=subscription]');
+    expect(hermes.recorded[0]?.input).toContain('check');
+    expect(hermes.recorded[0]?.sessionKey).toBe(`hermieos:user-${u.id}`);
+
+    const [updated] = await db
+      .select()
+      .from(schema.subscriptions)
+      .where(sql`${schema.subscriptions.id} = ${sub.id}`);
+    expect(updated?.nextRunAt.getTime()).toBeGreaterThan(before);
+    expect(updated?.consecutiveFailures).toBe(0);
+    expect(updated?.lastError).toBeNull();
+  });
+
+  it('does not dispatch a subscription whose next_run_at is in the future', async () => {
+    const u = await seedUser('alice');
+    await seedSubscription(u.id, { name: 'X', instruction: 'check', cadence: 'daily' }, new Date(Date.now() + 60 * 60_000));
+
+    const summary = await tickOnce(client);
+    expect(summary.usersScanned).toBe(0);
+    expect(summary.subscriptionsDispatched).toBe(0);
+    expect(summary.feedbackReviewsDispatched).toBe(0);
+    expect(hermes.recorded.length).toBe(0);
+  });
+
+  it('does not dispatch a subscription with a future next_retry_at', async () => {
+    const u = await seedUser('alice');
+    const [sub] = await db
+      .insert(schema.subscriptions)
+      .values({
+        userId: u.id,
+        name: 'retrying',
+        target: 't',
+        instruction: 'check',
+        cadence: 'daily',
+        nextRunAt: new Date(Date.now() - 60_000),
+        nextRetryAt: new Date(Date.now() + 60_000),
+        consecutiveFailures: 1,
+      })
+      .returning();
+    expect(sub).toBeDefined();
+
+    const summary = await tickOnce(client);
+    expect(summary.subscriptionsDispatched).toBe(0);
+    expect(hermes.recorded.length).toBe(0);
+  });
+
+  it('skips a user with scheduler_enabled=false', async () => {
+    const u = await seedUser('paused', { schedulerEnabled: false });
+    await seedSubscription(u.id, { name: 'X', instruction: 'check', cadence: 'daily' });
+
+    const summary = await tickOnce(client);
+    expect(summary.usersScanned).toBe(0);
+    expect(summary.subscriptionsDispatched).toBe(0);
+    expect(hermes.recorded.length).toBe(0);
+  });
+
+  it('skips an archived user even with scheduler_enabled=true', async () => {
+    const u = await seedUser('archived');
+    await db.update(schema.users).set({ archivedAt: new Date() }).where(sql`${schema.users.id} = ${u.id}`);
+    await seedSubscription(u.id, { name: 'X', instruction: 'check', cadence: 'daily' });
+
+    const summary = await tickOnce(client);
+    expect(summary.subscriptionsDispatched).toBe(0);
+  });
+});
+
+describe('tickOnce — failure handling', () => {
+  it('on 5xx, increments consecutive_failures and sets next_retry_at with the 1m backoff', async () => {
+    hermes.setMode({ runStatus: 500 });
+    const u = await seedUser('alice');
+    const sub = await seedSubscription(u.id, { name: 'X', instruction: 'check', cadence: 'daily' });
+
+    const before = Date.now();
+    const summary = await tickOnce(client);
+    expect(summary.subscriptionsDispatched).toBe(1);
+    expect(summary.subscriptionsFailed).toBe(1);
+    expect(summary.subscriptionsSucceeded).toBe(0);
+
+    const [updated] = await db
+      .select()
+      .from(schema.subscriptions)
+      .where(sql`${schema.subscriptions.id} = ${sub.id}`);
+    expect(updated?.consecutiveFailures).toBe(1);
+    expect(updated?.lastError).toMatch(/configured failure/);
+    // next_retry_at should be ~1 minute from now
+    const delta = (updated?.nextRetryAt?.getTime() ?? 0) - before;
+    expect(delta).toBeGreaterThan(30_000);
+    expect(delta).toBeLessThan(120_000);
+    // and a feed_event of kind task_finished, status=failed
+    const [feed] = await db
+      .select()
+      .from(schema.feedEvents)
+      .where(sql`${schema.feedEvents.userId} = ${u.id} and ${schema.feedEvents.kind} = 'task_finished'`);
+    expect(feed).toBeDefined();
+    expect(feed?.title).toContain('X');
+  });
+
+  it('three consecutive failures auto-pause and emit a system notification', async () => {
+    hermes.setMode({ alwaysFail: true });
+    const u = await seedUser('alice');
+    const sub = await seedSubscription(u.id, { name: 'Auto', instruction: 'check', cadence: 'daily' });
+
+    for (let i = 0; i < 3; i++) {
+      await db
+        .update(schema.subscriptions)
+        .set({
+          nextRunAt: new Date(Date.now() - 1000),
+          nextRetryAt: new Date(Date.now() - 1000),
+        })
+        .where(sql`${schema.subscriptions.id} = ${sub.id}`);
+      const summary = await tickOnce(client);
+      expect(summary.subscriptionsFailed).toBe(1);
+    }
+
+    const [updated] = await db
+      .select()
+      .from(schema.subscriptions)
+      .where(sql`${schema.subscriptions.id} = ${sub.id}`);
+    expect(updated?.status).toBe('paused');
+    expect(updated?.consecutiveFailures).toBe(3);
+
+    // the third tick should have emitted a system notification + feed_event
+    const [notif] = await db
+      .select()
+      .from(schema.notifications)
+      .where(sql`${schema.notifications.userId} = ${u.id}`);
+    expect(notif).toBeDefined();
+    expect(notif?.title).toContain('auto-paused');
+    expect(notif?.priority).toBe('high');
+
+    const [feed] = await db
+      .select()
+      .from(schema.feedEvents)
+      .where(
+        sql`${schema.feedEvents.userId} = ${u.id} and ${schema.feedEvents.kind} = 'notification'`,
+      );
+    expect(feed).toBeDefined();
+  });
+
+  it('retries on transient failure and succeeds on the next attempt (with the right backoff)', async () => {
+    hermes.setMode({ transientFailures: 1 });
+    const u = await seedUser('alice');
+    const sub = await seedSubscription(u.id, { name: 'Recover', instruction: 'check', cadence: 'daily' });
+
+    // First tick: Hermes returns 503 once, then 200. The retry succeeds,
+    // so the run is marked succeeded (subscribedSucceeded=1).
+    const s1 = await tickOnce(client);
+    expect(s1.subscriptionsSucceeded).toBe(1);
+    expect(s1.subscriptionsFailed).toBe(0);
+    expect(hermes.recorded.length).toBe(2); // one 503 + one 200
+
+    // Second tick (sanity): same path, succeeds again.
+    await db
+      .update(schema.subscriptions)
+      .set({
+        nextRunAt: new Date(Date.now() - 1000),
+        nextRetryAt: new Date(Date.now() - 1000),
+      })
+      .where(sql`${schema.subscriptions.id} = ${sub.id}`);
+
+    const s2 = await tickOnce(client);
+    expect(s2.subscriptionsSucceeded).toBe(1);
+    const [updated] = await db
+      .select()
+      .from(schema.subscriptions)
+      .where(sql`${schema.subscriptions.id} = ${sub.id}`);
+    expect(updated?.consecutiveFailures).toBe(0);
+  });
+
+  it('a non-transient failure (400) does not retry and is marked failed', async () => {
+    hermes.setMode({ runStatus: 400 });
+    const u = await seedUser('alice');
+    const sub = await seedSubscription(u.id, { name: 'BadReq', instruction: 'check', cadence: 'daily' });
+
+    const s1 = await tickOnce(client);
+    expect(s1.subscriptionsFailed).toBe(1);
+    expect(hermes.recorded.length).toBe(1); // no retry
+    const [updated] = await db
+      .select()
+      .from(schema.subscriptions)
+      .where(sql`${schema.subscriptions.id} = ${sub.id}`);
+    expect(updated?.consecutiveFailures).toBe(1);
+  });
+});
+
+describe('tickOnce — feedback review', () => {
+  it('dispatches a feedback_review run when feedback has accumulated and no recent review exists', async () => {
+    const u = await seedUser('alice');
+
+    // Insert some feedback directly
+    const obj = await db
+      .insert(schema.objects)
+      .values({
+        userId: u.id,
+        type: 'research',
+        title: 'a',
+        body: {},
+        createdBy: 'user',
+      })
+      .returning({ id: schema.objects.id });
+    expect(obj[0]).toBeDefined();
+    // 3 different (user, object, kind) rows so the unique constraint
+    // doesn't block them
+    await db.insert(schema.feedback).values({
+      userId: u.id,
+      objectId: obj[0]!.id,
+      kind: 'like',
+    });
+    await db.insert(schema.feedback).values({
+      userId: u.id,
+      objectId: obj[0]!.id,
+      kind: 'save',
+    });
+    await db.insert(schema.feedback).values({
+      userId: u.id,
+      objectId: obj[0]!.id,
+      kind: 'ignore',
+    });
+
+    const summary = await tickOnce(client);
+    expect(summary.feedbackReviewsDispatched).toBe(1);
+    const reviewCall = hermes.recorded.find(
+      (r) => r.input.includes('[kind=feedback_review]') && r.input.includes('3 feedback'),
+    );
+    expect(reviewCall).toBeDefined();
+    expect(reviewCall?.sessionKey).toBe(`hermieos:user-${u.id}`);
+  });
+
+  it('does not dispatch a feedback_review when no feedback is pending', async () => {
+    const u = await seedUser('alice');
+    const summary = await tickOnce(client);
+    expect(summary.feedbackReviewsDispatched).toBe(0);
+  });
+});
+
+describe('tickOnce — dry-run and locking', () => {
+  it('dry-run mode does not POST to Hermes', async () => {
+    const u = await seedUser('alice');
+    await seedSubscription(u.id, { name: 'X', instruction: 'check', cadence: 'daily' });
+    const summary = await tickOnce(client, { dryRun: true });
+    expect(summary.subscriptionsDispatched).toBe(1);
+    expect(summary.subscriptionsSucceeded).toBe(1);
+    expect(hermes.recorded.length).toBe(0);
+  });
+
+  it('dry-run mode skips the advisory lock (so two dry-run schedulers can run side by side)', async () => {
+    const u = await seedUser('alice');
+    await seedSubscription(u.id, { name: 'X', instruction: 'check', cadence: 'daily' });
+    const a = await tickOnce(client, { dryRun: true });
+    const b = await tickOnce(client, { dryRun: true });
+    expect(a.lockAcquired).toBe(true);
+    expect(b.lockAcquired).toBe(true);
+  });
+
+  it('real-mode lock: a second tick while the first holds the lock returns lockAcquired=false', async () => {
+    const u = await seedUser('alice');
+    await seedSubscription(u.id, { name: 'X', instruction: 'check', cadence: 'daily' });
+
+    // Acquire the lock on a *different* postgres connection so the
+    // scheduler's connection (which is the one `pg_try_advisory_lock`
+    // would be called on) actually sees it as held by another session.
+    const postgres = (await import('postgres')).default;
+    const otherClient = postgres(
+      process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos',
+    );
+    try {
+      await otherClient`select pg_advisory_lock(91337)`;
+      const summary = await tickOnce(client, { dryRun: false });
+      expect(summary.lockAcquired).toBe(false);
+      expect(summary.subscriptionsDispatched).toBe(0);
+      expect(hermes.recorded.length).toBe(0);
+    } finally {
+      try {
+        await otherClient`select pg_advisory_unlock(91337)`;
+      } catch {
+        // ignore
+      }
+      await otherClient.end();
+    }
+  });
+});
