@@ -28,7 +28,7 @@ beforeEach(async () => {
 
 async function call(
   app: Awaited<ReturnType<typeof buildApp>>,
-  method: string,
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   url: string,
   opts: { body?: unknown; cookies?: Record<string, string> } = {},
 ): Promise<{ status: number; body: Record<string, unknown>; setCookie: string | null }> {
@@ -56,16 +56,19 @@ async function call(
   return {
     status: res.statusCode,
     body,
-    setCookie: res.headers['set-cookie'] ?? null,
+    setCookie: (res.headers['set-cookie'] as string | undefined) ?? null,
   };
 }
 
 function getCookie(setCookie: string | null, name: string): string | null {
   if (!setCookie) return null;
   for (const part of setCookie.split(/,(?=[^;]+=)/)) {
-    const [pair] = part.split(';');
-    const [k, v] = pair.split('=');
-    if (k.trim() === name) return v ?? null;
+    const pair = part.split(';')[0];
+    if (!pair) continue;
+    const eq = pair.indexOf('=');
+    if (eq < 0) continue;
+    const k = pair.slice(0, eq).trim();
+    if (k === name) return pair.slice(eq + 1) ?? null;
   }
   return null;
 }

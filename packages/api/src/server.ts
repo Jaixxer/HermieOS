@@ -3,8 +3,14 @@ import cookie from '@fastify/cookie';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { loggerOptions } from './logger.js';
 import { buildContext } from './context.js';
-import { registerAuthDecorators, SESSION_COOKIE_NAME } from './auth-middleware.js';
+import { registerAuthDecorators, SESSION_COOKIE_NAME, getSessionUser } from './auth-middleware.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerMeRoutes } from './routes/me.js';
+import { registerFeedRoutes } from './routes/feed.js';
+import { registerObjectRoutes } from './routes/objects.js';
+import { registerSearchAndFeedbackRoutes } from './routes/search-feedback.js';
+import { registerSubscriptionRoutes } from './routes/subscriptions.js';
+import { registerRunRoutes } from './routes/runs.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -18,13 +24,23 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   registerAuthDecorators(app);
+
+  // Resolve session -> user for every request (decorator on onRequest).
   app.addHook('onRequest', async (req) => {
     req.ctx = buildContext(req.id);
+    if (req.url === '/healthz') return;
+    req.user = await getSessionUser(req);
   });
 
   app.get('/healthz', async () => ({ status: 'ok', service: 'hermieos-api' }));
 
   await registerAuthRoutes(app);
+  await registerMeRoutes(app);
+  await registerFeedRoutes(app);
+  await registerObjectRoutes(app);
+  await registerSearchAndFeedbackRoutes(app);
+  await registerSubscriptionRoutes(app);
+  await registerRunRoutes(app);
 
   return app;
 }
