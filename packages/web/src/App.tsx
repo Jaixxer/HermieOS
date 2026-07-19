@@ -1,0 +1,43 @@
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import { useAuth } from './auth';
+import { Layout } from './components/Layout';
+import { LoginPage } from './pages/LoginPage';
+import { SignupPage } from './pages/SignupPage';
+import { FeedPage } from './pages/FeedPage';
+import { ObjectDetailPage } from './pages/ObjectDetailPage';
+import { SubscriptionsPage } from './pages/SubscriptionsPage';
+import { SettingsPage } from './pages/SettingsPage';
+import { McpTokenPage } from './pages/McpTokenPage';
+
+function RequireAuth({ children }: { children: ReactNode }): React.JSX.Element {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return <div className="p-8 text-slate-400">Loading…</div>;
+  if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
+  return <>{children}</>;
+}
+
+export function App(): React.JSX.Element {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
+      <Route
+        path="/"
+        element={
+          <RequireAuth>
+            <Layout />
+          </RequireAuth>
+        }
+      >
+        <Route index element={<FeedPage />} />
+        <Route path="objects/:id" element={<ObjectDetailPage />} />
+        <Route path="subscriptions" element={<SubscriptionsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="settings/mcp-token" element={<McpTokenPage />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
