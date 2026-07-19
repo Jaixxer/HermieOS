@@ -9,8 +9,8 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} vitest",
-    "test:run": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} vitest run"
+    "test": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} vitest --no-file-parallelism",
+    "test:run": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} vitest run --no-file-parallelism"
   },
   "dependencies": {
     "@hermieos/db": "workspace:*",

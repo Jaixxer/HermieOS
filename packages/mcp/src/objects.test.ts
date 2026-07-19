@@ -6,6 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { buildMcpApp } from './server.js';
 import { ToolRegistry } from './registry.js';
 import { registerObjectTools } from './tools/objects.js';
+import { clearTokenCache } from './auth.js';
 
 let db: Database;
 
@@ -133,6 +134,7 @@ beforeAll(async () => {
     url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos',
   });
   await cleanup();
+  clearTokenCache();
   userA = await seedUser('alice');
   userB = await seedUser('bob');
   sessionA = await initSession(userA.token);

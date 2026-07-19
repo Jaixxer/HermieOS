@@ -122,6 +122,15 @@ export async function createObject(userId: string, input: CreateObjectInput): Pr
       payload: { source: input.source },
     });
 
+    await tx.insert(schema.feedEvents).values({
+      userId,
+      kind: 'object_created',
+      objectId: id,
+      title: input.title,
+      body: input.summary ?? null,
+      payload: { type: input.type, source: input.source },
+    });
+
     return rowToObject(row, 1);
   });
 }
