@@ -70,7 +70,6 @@ describe('openEventStream (bus) — direct test', () => {
       },
     });
     try {
-      // alice's event
       await db.insert(schema.feedEvents).values({
         userId: aliceId,
         kind: 'object_created',
@@ -78,7 +77,6 @@ describe('openEventStream (bus) — direct test', () => {
         title: 'alice-direct',
         payload: { source: 'test' },
       });
-      // bob's event
       const [bob] = await db
         .select({ id: schema.users.id })
         .from(schema.users)
@@ -91,7 +89,6 @@ describe('openEventStream (bus) — direct test', () => {
         title: 'bob-direct',
         payload: { source: 'test' },
       });
-      // Wait for one or two poll cycles
       await new Promise((r) => setTimeout(r, SSE_POLL_MS * 3 + 100));
       expect(aliceReceived).toContain('alice-direct');
       expect(aliceReceived).not.toContain('bob-direct');
