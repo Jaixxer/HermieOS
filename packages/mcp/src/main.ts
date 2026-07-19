@@ -5,6 +5,7 @@ import { createLogger } from './logger.js';
 import { registerObjectTools } from './tools/objects.js';
 import { registerRelationshipAndSubscriptionTools } from './tools/misc.js';
 import { registerNotifyTool } from './tools/notify.js';
+import { registerRunsTool } from './tools/runs.js';
 
 const log = createLogger();
 const port = Number(process.env.MCP_PORT ?? 3002);
@@ -13,7 +14,7 @@ const registry = new ToolRegistry();
 registerObjectTools(registry);
 registerRelationshipAndSubscriptionTools(registry);
 registerNotifyTool(registry);
-// get_recent_runs (Phase 1f) comes next.
+registerRunsTool(registry);
 
 const app = buildMcpApp(registry);
 
