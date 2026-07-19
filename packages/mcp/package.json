@@ -9,13 +9,14 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest",
-    "test:run": "vitest run"
+    "test": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} vitest",
+    "test:run": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} vitest run"
   },
   "dependencies": {
     "@hermieos/db": "workspace:*",
     "@hermieos/domain": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "drizzle-orm": "^0.45.2",
     "hono": "^4.6.14",
     "pino": "^9.5.0",
     "pino-pretty": "^13.0.0",

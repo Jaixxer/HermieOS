@@ -1,4 +1,5 @@
-import pino, { type Logger } from 'pino';
+import type { Logger } from 'pino';
+import pino from 'pino';
 
 export function createLogger(): Logger {
   const level = process.env.LOG_LEVEL ?? 'info';
