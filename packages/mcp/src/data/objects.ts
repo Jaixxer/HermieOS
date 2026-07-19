@@ -353,7 +353,7 @@ export async function listObjects(
   if (input.type) conditions.push(eq(schema.objects.type, input.type));
   if (input.status) conditions.push(eq(schema.objects.status, input.status));
   if (!input.includeArchived) conditions.push(isNull(schema.objects.archivedAt));
-  if (input.tag) conditions.push(sql`${input.tag} = ANY(${schema.objects.tags})`);
+  if (input.tag) conditions.push(sql`${schema.objects.tags} @> ARRAY[${input.tag}]::text[]`);
 
   let cursorTs: Date | null = null;
   if (input.cursor) {

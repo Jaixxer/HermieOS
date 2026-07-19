@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { schema } from '@hermieos/db';
 import { getDb } from './db.js';
 
@@ -38,7 +38,7 @@ export async function getRecentActivity(
     conds.push(sql`${schema.feedEvents.createdAt} > ${opts.since.toISOString()}`);
   }
   if (opts.kinds && opts.kinds.length > 0) {
-    conds.push(sql`${schema.feedEvents.kind} = ANY(${opts.kinds})`);
+    conds.push(inArray(schema.feedEvents.kind, opts.kinds as schema.FeedEvent['kind'][]));
   }
   const rows = await db
     .select()
