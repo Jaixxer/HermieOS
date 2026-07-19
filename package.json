@@ -27,7 +27,8 @@
     "db:studio": "pnpm --filter @hermieos/db studio",
     "db:seed": "pnpm --filter @hermieos/db seed",
     "mcp:e2e": "pnpm --filter @hermieos/mcp e2e",
-    "scheduler:e2e": "pnpm --filter @hermieos/scheduler e2e"
+    "scheduler:e2e": "pnpm --filter @hermieos/scheduler e2e",
+    "api:e2e": "pnpm --filter @hermieos/api e2e"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
