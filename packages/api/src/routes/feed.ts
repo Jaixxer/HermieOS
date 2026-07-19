@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { createTtlCache } from '@hermieos/cache';
 import { getRecentActivity, markFeedRead } from '@hermieos/mcp/src/data/feed.js';
+import { BadRequest, Unauthorized, sendError } from '../errors.js';
 
 const FEED_CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS ?? 120_000);
 const FEED_CACHE_MAX_ENTRIES = 1000;
@@ -39,7 +40,7 @@ export async function registerFeedRoutes(app: FastifyInstance): Promise<void> {
   // GET /feed?since=...&limit=...&kinds=...  (cached for 2 min)
   app.get('/feed', async (req, reply) => {
     if (!req.user) {
-      return reply.code(401).send({ error: 'unauthorized' });
+      return sendError(reply, new Unauthorized(), String(req.id));
     }
     const q = req.query as { since?: string; limit?: string; kinds?: string };
     const cacheKey = feedCacheKey(req.user.id, q);
@@ -66,7 +67,7 @@ export async function registerFeedRoutes(app: FastifyInstance): Promise<void> {
   // GET /feed/unread-count (cheap; not cached)
   app.get('/feed/unread-count', async (req) => {
     if (!req.user) {
-      return { error: 'unauthorized' };
+      throw new Unauthorized();
     }
     const result = await getRecentActivity(req.user.id, { limit: 200 });
     const unread = result.events.filter((e) => e.readAt === null).length;
@@ -76,15 +77,15 @@ export async function registerFeedRoutes(app: FastifyInstance): Promise<void> {
   // POST /feed/mark-read invalidates the cache for this user
   app.post('/feed/mark-read', async (req, reply) => {
     if (!req.user) {
-      return reply.code(401).send({ error: 'unauthorized' });
+      return sendError(reply, new Unauthorized(), String(req.id));
     }
     const body = (req.body ?? {}) as { upTo?: string };
     if (typeof body.upTo !== 'string') {
-      return reply.code(400).send({ error: 'invalid_input' });
+      return sendError(reply, new BadRequest('upTo must be an ISO timestamp'), String(req.id));
     }
     const upTo = new Date(body.upTo);
     if (Number.isNaN(upTo.getTime())) {
-      return reply.code(400).send({ error: 'invalid_input' });
+      return sendError(reply, new BadRequest('upTo is not a valid date'), String(req.id));
     }
     invalidateUserCache(req.user.id);
     const result = await markFeedRead(req.user.id, upTo);

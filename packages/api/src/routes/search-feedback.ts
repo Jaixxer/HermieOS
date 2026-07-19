@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { createTtlCache } from '@hermieos/cache';
 import { searchObjects } from '@hermieos/mcp/src/data/objects.js';
 import { recordFeedback, type FeedbackKind } from '@hermieos/mcp/src/data/feedback.js';
+import { BadRequest, Unauthorized, sendError } from '../errors.js';
 
 const VALID_KINDS: FeedbackKind[] = ['like', 'save', 'ignore', 'archive', 'suggest'];
 
@@ -40,11 +41,11 @@ export async function registerSearchAndFeedbackRoutes(app: FastifyInstance): Pro
   // GET /search?q=...&type=...&limit=...  (cached for 2 min)
   app.get('/search', async (req, reply) => {
     if (!req.user) {
-      return reply.code(401).send({ error: 'unauthorized' });
+      return sendError(reply, new Unauthorized(), String(req.id));
     }
     const q = req.query as { q?: string; type?: string; limit?: string };
     if (!q.q || q.q.length === 0) {
-      return reply.code(400).send({ error: 'invalid_input' });
+      return sendError(reply, new BadRequest('q is required'), String(req.id));
     }
     const limit = q.limit ? Math.min(Math.max(parseInt(q.limit, 10) || 25, 1), 100) : 25;
     const cacheKey = searchCacheKey(req.user.id, q);
@@ -67,26 +68,26 @@ export async function registerSearchAndFeedbackRoutes(app: FastifyInstance): Pro
   // POST /objects/:id/feedback — also invalidates the search cache
   app.post('/objects/:id/feedback', async (req, reply) => {
     if (!req.user) {
-      return reply.code(401).send({ error: 'unauthorized' });
+      return sendError(reply, new Unauthorized(), String(req.id));
     }
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as { kind?: string; payload?: Record<string, unknown> };
     if (!body.kind || !VALID_KINDS.includes(body.kind as FeedbackKind)) {
-      return reply.code(400).send({ error: 'invalid_kind' });
-    }
-    try {
-      const feedback = await recordFeedback(
-        req.user.id,
-        id,
-        body.kind as FeedbackKind,
-        body.payload,
+      return sendError(
+        reply,
+        new BadRequest(`kind must be one of: ${VALID_KINDS.join(', ')}`),
+        String(req.id),
       );
-      // Feedback doesn't change object content for FTS, but invalidate
-      // for safety — it's a cheap write.
-      invalidateUserSearch(req.user.id);
-      return { feedback };
-    } catch (err) {
-      return reply.code(400).send({ error: 'feedback_failed', message: (err as Error).message });
     }
+    const feedback = await recordFeedback(
+      req.user.id,
+      id,
+      body.kind as FeedbackKind,
+      body.payload,
+    );
+    // Feedback doesn't change object content for FTS, but invalidate
+    // for safety — it's a cheap write.
+    invalidateUserSearch(req.user.id);
+    return { feedback };
   });
 }

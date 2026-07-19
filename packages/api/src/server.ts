@@ -13,6 +13,7 @@ import { registerSearchAndFeedbackRoutes } from './routes/search-feedback.js';
 import { registerSubscriptionRoutes } from './routes/subscriptions.js';
 import { registerRunRoutes } from './routes/runs.js';
 import { registerEventsRoutes } from './routes/events.js';
+import { ApiError, sendError } from './errors.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -33,10 +34,42 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   registerAuthDecorators(app);
 
+  // Surface the request id in every response header so support can quote it.
+  app.addHook('onSend', async (req, reply) => {
+    if (req.id) reply.header('x-request-id', String(req.id));
+  });
+
   app.addHook('onRequest', async (req) => {
     req.ctx = buildContext(req.id);
     if (req.url === '/healthz') return;
     req.user = await getSessionUser(req);
+  });
+
+  // Centralized error handler. Any thrown ApiError becomes a structured body;
+  // any other thrown error becomes a 500 with a generic message + request id.
+  // We never leak the raw error message or stack to clients.
+  app.setErrorHandler((err, req, reply) => {
+    const requestId = String(req.id);
+    if (err instanceof ApiError) {
+      return sendError(reply, err, requestId);
+    }
+    req.log.error({ err, requestId, url: req.url, method: req.method }, 'unhandled api error');
+    reply.code(500);
+    return reply.send({
+      error: 'internal_error',
+      message: 'An unexpected error occurred.',
+      requestId,
+    });
+  });
+
+  // 404 handler — same shape, so clients always have a requestId to quote.
+  app.setNotFoundHandler((req, reply) => {
+    reply.code(404);
+    return reply.send({
+      error: 'not_found',
+      message: `No route for ${req.method} ${req.url}`,
+      requestId: String(req.id),
+    });
   });
 
   app.get('/healthz', async () => ({ status: 'ok', service: 'hermieos-api' }));
@@ -54,3 +87,4 @@ export async function buildApp(): Promise<FastifyInstance> {
 }
 
 export { SESSION_COOKIE_NAME };
+

@@ -10,21 +10,20 @@ import {
   setDisplayName,
 } from '../data/auth.js';
 import { SESSION_COOKIE_NAME as SESSION_COOKIE_NAME_LOCAL } from '../auth-middleware.js';
+import { BadRequest, Conflict, Unauthorized, sendError } from '../errors.js';
 
 export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/signup', async (req, reply) => {
     const parsed = signupArgsSchema.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(400);
-      return { error: 'invalid_input', details: parsed.error.flatten() };
+      return sendError(reply, new BadRequest('invalid_input', parsed.error.flatten()), String(req.id));
     }
     const { email, password, displayName } = parsed.data;
 
     // Reject if email already taken.
     const existing = await findUserByEmail(email);
     if (existing) {
-      reply.code(409);
-      return { error: 'email_taken' };
+      return sendError(reply, new Conflict('email_taken'), String(req.id));
     }
 
     const passwordHash = await hashPassword(password);
@@ -35,8 +34,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       // Race: someone else created the user between our check and our insert.
       const message = err instanceof Error ? err.message : String(err);
       if (message.includes('unique') || message.includes('duplicate')) {
-        reply.code(409);
-        return { error: 'email_taken' };
+        return sendError(reply, new Conflict('email_taken'), String(req.id));
       }
       throw err;
     }
@@ -57,19 +55,16 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/login', async (req, reply) => {
     const parsed = loginArgsSchema.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(400);
-      return { error: 'invalid_input', details: parsed.error.flatten() };
+      return sendError(reply, new BadRequest('invalid_input', parsed.error.flatten()), String(req.id));
     }
     const { email, password } = parsed.data;
     const user = await findUserByEmail(email);
     if (!user || user.archivedAt) {
-      reply.code(401);
-      return { error: 'invalid_credentials' };
+      return sendError(reply, new Unauthorized('invalid_credentials'), String(req.id));
     }
     const ok = await verifyPassword(user.passwordHash, password);
     if (!ok) {
-      reply.code(401);
-      return { error: 'invalid_credentials' };
+      return sendError(reply, new Unauthorized('invalid_credentials'), String(req.id));
     }
     const session = await createSession({
       userId: user.id,
@@ -91,8 +86,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/auth/logout-all', async (req, reply) => {
     if (!req.user) {
-      reply.code(401);
-      return { error: 'unauthorized' };
+      return sendError(reply, new Unauthorized(), String(req.id));
     }
     await deleteAllUserSessions(req.user.id);
     clearSessionCookie(reply);
@@ -102,13 +96,11 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   // Display name edit
   app.patch('/me', async (req, reply) => {
     if (!req.user) {
-      reply.code(401);
-      return { error: 'unauthorized' };
+      return sendError(reply, new Unauthorized(), String(req.id));
     }
     const body = (req.body ?? {}) as { displayName?: unknown };
     if (typeof body.displayName !== 'string' || body.displayName.length < 1 || body.displayName.length > 100) {
-      reply.code(400);
-      return { error: 'invalid_input' };
+      return sendError(reply, new BadRequest('displayName must be 1..100 chars'), String(req.id));
     }
     await setDisplayName(req.user.id, body.displayName);
     return { user: { ...req.user, displayName: body.displayName } };
