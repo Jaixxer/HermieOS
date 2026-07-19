@@ -19,5 +19,76 @@ services:
       timeout: 5s
       retries: 10
 
+  # Hermes gateway stub. In MVP this is a "fake Hermes" that records
+  # the run envelope and replies 200; swap to a real Hermes image for
+  # Phase 6.
+  fake-hermes:
+    image: node:22-alpine
+    container_name: hermieos-fake-hermes
+    working_dir: /app
+    command: ["node", "fake-hermes.js"]
+    environment:
+      PORT: "4100"
+    ports:
+      - "4100:4100"
+    volumes:
+      - ./packages/scheduler/fake-hermes-docker.js:/app/fake-hermes.js:ro
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hermieos-api
+    restart: unless-stopped
+    environment:
+      SERVICE: api
+      PORT: "3001"
+      DATABASE_URL: postgres://hermieos:hermieos@postgres:5432/hermieos
+      COOKIE_SECRET: ${COOKIE_SECRET:-dev-only-cookie-secret-change-me}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hermieos-mcp
+    restart: unless-stopped
+    environment:
+      SERVICE: mcp
+      PORT: "3002"
+      DATABASE_URL: postgres://hermieos:hermieos@postgres:5432/hermieos
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3002:3002"
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hermieos-scheduler
+    restart: unless-stopped
+    environment:
+      SERVICE: scheduler
+      DATABASE_URL: postgres://hermieos:hermieos@postgres:5432/hermieos
+      HERMES_GATEWAY_URL: http://fake-hermes:4100
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+      TICK_INTERVAL_MS: ${TICK_INTERVAL_MS:-60000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fake-hermes:
+        condition: service_started
+
 volumes:
   hermieos-pgdata:

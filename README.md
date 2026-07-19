@@ -7,13 +7,13 @@ A personal operating system around Hermes Agent. The long-running agent is the b
 
 ## Status
 
-Phase 0 (foundations). Monorepo, schema, docker-compose, tests, smoke endpoints. No real Hermes wiring yet.
+MVP feature-complete (Phases 0–4 done; Phase 5 hardening in progress). Hermes is wired up via a "fake Hermes" stand-in. The full loop runs locally with `pnpm demo`.
 
 ## Prereqs
 
 - Node.js 22+
 - pnpm 10+ (`npm i -g pnpm`)
-- Docker + Docker Compose (for the Postgres dev DB)
+- Docker + Docker Compose (for the Postgres dev DB) — or a local Postgres 17
 
 ## First-time setup
 
@@ -35,10 +35,10 @@ pnpm db:migrate
 
 ```bash
 # run a service
-pnpm dev:api         # http://127.0.0.1:3001
-pnpm dev:mcp         # http://127.0.0.1:3002
+pnpm dev:api         # http://127.0.0.1:3001  (REST + SSE)
+pnpm dev:mcp         # http://127.0.0.1:3002  (MCP server Hermes talks to)
 pnpm dev:scheduler   # background loop
-pnpm dev:web         # web client (skeleton in Phase 0)
+pnpm dev:web         # web client at http://127.0.0.1:5173
 
 # run all tests
 pnpm test:run
@@ -48,7 +48,25 @@ pnpm typecheck
 
 # lint
 pnpm lint
+
+# end-to-end scripts (one per service)
+pnpm mcp:e2e
+pnpm scheduler:e2e
+pnpm api:e2e
 ```
+
+## The full demo
+
+```bash
+# bring up Postgres + the three services (api, mcp, scheduler) and a fake Hermes
+docker compose up -d
+
+# run the full loop locally: sign up, create a project, dispatch a
+# subscription, watch the scheduler fire it, see the feed update.
+pnpm demo
+```
+
+`pnpm demo` runs `scripts/demo.ts` and completes in under 10 minutes.
 
 ## DB
 
@@ -64,7 +82,22 @@ pnpm db:push
 
 # open Drizzle Studio
 pnpm db:studio
+
+# seed a small dataset for manual testing
+pnpm db:seed
 ```
+
+## Web client
+
+`packages/web` is a Vite + React 19 + TanStack Query + Tailwind v4 app.
+
+```bash
+pnpm --filter @hermieos/web dev   # http://127.0.0.1:5173
+pnpm --filter @hermieos/web build
+pnpm --filter @hermieos/web e2e   # Playwright
+```
+
+The web client expects the API on `:3001`. In dev, the Vite dev server proxies `/api/*` to `http://localhost:3001`.
 
 ## Repo layout
 
@@ -72,6 +105,7 @@ pnpm db:studio
 HermieOs/
 ├── SPEC.md
 ├── docs/                   # design + roadmap + decisions
+├── scripts/                # demo, seed
 ├── packages/
 │   ├── api/                # user-facing HTTP + SSE
 │   ├── mcp/                # MCP server Hermes talks to
@@ -80,14 +114,23 @@ HermieOs/
 │   ├── domain/             # shared zod schemas + types
 │   ├── cache/              # in-memory TTL cache
 │   └── web/                # React app (PWA-capable)
-├── docker-compose.yml      # Postgres only in Phase 0
+├── docker-compose.yml      # Postgres + api + mcp + scheduler + fake-hermes
+├── Dockerfile              # shared image for api/mcp/scheduler
 ├── package.json            # workspace root
 └── pnpm-workspace.yaml
 ```
 
-## Phase 0 exit criterion
+## How to use this repo
 
-> `docker compose up` brings up Postgres, runs all migrations cleanly, and the test suite passes. A developer can clone the repo, run two commands, and have a green build.
+- **`docs/roadmap.md`** is the high-level plan. Each phase has an exit criterion.
+- **`docs/decisions.md`** records the locked design choices.
+- **`docs/data-model.md`** is the schema spec.
+- **`docs/hermes-integration.md`** is the wiring for a real Hermes install.
+- **`SPEC.md`** is the full product spec.
+
+## MVP exit criterion
+
+> A developer can clone, run `docker compose up -d && pnpm db:migrate && pnpm demo`, and see the full loop in under 10 minutes. The pause flag stops the scheduler. The feed updates live. Errors are structured. CI green. No known P0 bugs.
 
 Verify locally:
 
@@ -97,4 +140,5 @@ pnpm install
 pnpm db:migrate
 pnpm test:run
 pnpm typecheck
+pnpm demo
 ```
