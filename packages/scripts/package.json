@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "demo": "tsx src/demo.ts",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "perf": "tsx src/perf-smoke.ts"
   },
   "dependencies": {
     "@hermieos/db": "workspace:*",

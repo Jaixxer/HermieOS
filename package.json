@@ -29,7 +29,8 @@
     "mcp:e2e": "pnpm --filter @hermieos/mcp e2e",
     "scheduler:e2e": "pnpm --filter @hermieos/scheduler e2e",
     "api:e2e": "pnpm --filter @hermieos/api e2e",
-    "demo": "pnpm --filter @hermieos/scripts demo"
+    "demo": "pnpm --filter @hermieos/scripts demo",
+    "perf": "pnpm --filter @hermieos/scripts perf"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
