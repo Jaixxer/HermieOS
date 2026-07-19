@@ -1,0 +1,23 @@
+name: hermieos
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: hermieos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hermieos
+      POSTGRES_PASSWORD: hermieos
+      POSTGRES_DB: hermieos
+    ports:
+      - "5432:5432"
+    volumes:
+      - hermieos-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hermieos -d hermieos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  hermieos-pgdata:

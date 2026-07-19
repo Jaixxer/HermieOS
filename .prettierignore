@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+.next
+.vite
+.turbo
+coverage
+*.tsbuildinfo
+pnpm-lock.yaml
+drizzle/

@@ -1,0 +1,38 @@
+{
+  "name": "hermieos",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Personal operating system around Hermes Agent",
+  "type": "module",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@11.3.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev:api": "pnpm --filter @hermieos/api dev",
+    "dev:mcp": "pnpm --filter @hermieos/mcp dev",
+    "dev:scheduler": "pnpm --filter @hermieos/scheduler dev",
+    "dev:web": "pnpm --filter @hermieos/web dev",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:run": "pnpm -r test:run",
+    "db:generate": "pnpm --filter @hermieos/db generate",
+    "db:migrate": "pnpm --filter @hermieos/db migrate",
+    "db:push": "pnpm --filter @hermieos/db push",
+    "db:studio": "pnpm --filter @hermieos/db studio",
+    "db:seed": "pnpm --filter @hermieos/db seed"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "eslint": "^9.18.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
