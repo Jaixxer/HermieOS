@@ -12,8 +12,24 @@ import {
 import { getObjectTimeline } from '@hermieos/mcp/src/data/timeline.js';
 import { BadRequest, NotFound, Unauthorized, sendError } from '../errors.js';
 
-const objectTypes = ['project', 'research', 'discovery', 'subscription', 'memory', 'task', 'note'] as const;
-const objectStatuses = ['active', 'paused', 'completed', 'archived'] as const;
+const objectTypes = [
+  'project',
+  'research',
+  'discovery',
+  'decision',
+  'opportunity',
+  'learning_path',
+  'note',
+  'collection',
+] as const;
+const objectStatuses = [
+  'active',
+  'in_progress',
+  'completed',
+  'open',
+  'resolved',
+  'archived',
+] as const;
 
 const createObjectBodySchema = z.object({
   type: z.enum(objectTypes),
