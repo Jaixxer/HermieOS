@@ -82,7 +82,10 @@ describe('mcp app', () => {
     name: 'noop_echo',
     description: 'Echo back the input.',
     schema: z.object({ value: z.string() }),
-    handler: async (ctx, args) => ({ user: ctx.userId, value: args.value }),
+    handler: async (ctx, args) => {
+      const a = args as { value: string };
+      return { user: ctx.userId, value: a.value };
+    },
   });
   const app: Hono = buildMcpApp(noopRegistry);
 

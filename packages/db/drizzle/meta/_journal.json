@@ -8,6 +8,34 @@
       "when": 1784445976394,
       "tag": "0000_certain_star_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784445980000,
+      "tag": "0001_add_object_search_vector",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784446705202,
+      "tag": "0002_famous_shooting_star",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784446713055,
+      "tag": "0003_true_reptil",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784446722407,
+      "tag": "0004_redundant_starjammers",
+      "breakpoints": true
     }
   ]
 }

@@ -6,7 +6,7 @@ import { Hono, type Context } from 'hono';
 import { randomUUID } from 'node:crypto';
 import { resolveBearer } from './auth.js';
 import { createLogger } from './logger.js';
-import { type AnyToolDefinition, type ToolRegistry } from './registry.js';
+import { type ToolDefinition, type ToolRegistry } from './registry.js';
 
 const log = createLogger();
 
@@ -34,7 +34,7 @@ function pruneStaleSessions(maxAgeMs: number): void {
 const pruneInterval = setInterval(() => pruneStaleSessions(30 * 60_000), 5 * 60_000);
 pruneInterval.unref();
 
-function buildMcpServer(tools: AnyToolDefinition[], userId: string): McpServer {
+function buildMcpServer(tools: ToolDefinition[], userId: string): McpServer {
   const server = new McpServer(
     { name: 'hermieos', version: '0.0.1' },
     { capabilities: { tools: {} } },
@@ -45,7 +45,7 @@ function buildMcpServer(tools: AnyToolDefinition[], userId: string): McpServer {
       tool.name,
       {
         description: tool.description,
-        inputSchema: tool.schema.shape,
+        inputSchema: tool.schema,
       },
       async (args: unknown) => {
         const parsed = tool.schema.safeParse(args);
