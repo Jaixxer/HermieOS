@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "demo": "tsx src/demo.ts"
+    "demo": "tsx src/demo.ts",
+    "seed": "tsx src/seed.ts"
   },
   "dependencies": {
     "@hermieos/db": "workspace:*",
+    "@hermieos/mcp": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {

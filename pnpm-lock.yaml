@@ -226,6 +226,9 @@ importers:
       '@hermieos/db':
         specifier: workspace:*
         version: link:../db
+      '@hermieos/mcp':
+        specifier: workspace:*
+        version: link:../mcp
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(postgres@3.4.9)
