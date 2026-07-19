@@ -375,3 +375,67 @@ describe('tickOnce — dry-run and locking', () => {
     }
   });
 });
+
+describe('tickOnce — chaos', () => {
+  it('recovers cleanly after Hermes 500s: the run is marked failed, retried, and succeeds on the next tick', async () => {
+    hermes.setMode({ runStatus: 500 });
+    const u = await seedUser('alice');
+    const sub = await seedSubscription(u.id, {
+      name: 'flaky',
+      instruction: 'check',
+      cadence: 'daily',
+    });
+
+    // Tick 1: Hermes returns 500 three times. The HermesClient retries
+    // on transient 5xx; after the 3rd failure the run is recorded as
+    // failed and consecutive_failures is incremented.
+    const s1 = await tickOnce(client);
+    expect(s1.subscriptionsFailed).toBe(1);
+    const [after1] = await db
+      .select()
+      .from(schema.subscriptions)
+      .where(sql`${schema.subscriptions.id} = ${sub.id}`);
+    expect(after1?.consecutiveFailures).toBe(1);
+    expect(after1?.nextRetryAt).toBeDefined();
+
+    // Tick 2: Hermes is healthy. The subscription is still due
+    // (next_retry_at is in the past because backoff is short, but
+    // we nudge it just in case).
+    hermes.setMode({ runStatus: 200 });
+    await db
+      .update(schema.subscriptions)
+      .set({
+        nextRunAt: new Date(Date.now() - 1000),
+        nextRetryAt: new Date(Date.now() - 1000),
+      })
+      .where(sql`${schema.subscriptions.id} = ${sub.id}`);
+    const s2 = await tickOnce(client);
+    expect(s2.subscriptionsSucceeded).toBe(1);
+    const [after2] = await db
+      .select()
+      .from(schema.subscriptions)
+      .where(sql`${schema.subscriptions.id} = ${sub.id}`);
+    expect(after2?.consecutiveFailures).toBe(0);
+  });
+
+  it('a paused user is not dispatched even if a tick is invoked between pause and resume', async () => {
+    hermes.setMode({ runStatus: 200 });
+    const u = await seedUser('alice');
+    await seedSubscription(u.id, { name: 'paused', instruction: 'x', cadence: 'daily' });
+
+    // User pauses.
+    await db
+      .update(schema.users)
+      .set({ schedulerEnabled: false })
+      .where(sql`${schema.users.id} = ${u.id}`);
+
+    // Force the subscription due.
+    await db.execute(
+      sql`update subscriptions set next_run_at = now() - interval '1 second' where user_id = ${u.id}`,
+    );
+
+    const s = await tickOnce(client);
+    expect(s.subscriptionsDispatched).toBe(0);
+    expect(hermes.recorded.length).toBe(0);
+  });
+});
