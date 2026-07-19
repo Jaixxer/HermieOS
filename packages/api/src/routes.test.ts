@@ -39,7 +39,7 @@ async function signup(
   const body = res.json() as { user: { id: string }; mcpToken: string };
   const setCookie = res.headers['set-cookie'] as string | undefined;
   if (!setCookie) throw new Error('no cookie set');
-  const cookie = setCookie.split(';')[0];
+  const cookie = setCookie.split(';')[0] ?? '';
   return { cookie, mcpToken: body.mcpToken, userId: body.user.id };
 }
 

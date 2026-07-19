@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import cookie from '@fastify/cookie';
+import * as ssePluginModule from '@fastify/sse';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { loggerOptions } from './logger.js';
 import { buildContext } from './context.js';
@@ -11,6 +12,7 @@ import { registerObjectRoutes } from './routes/objects.js';
 import { registerSearchAndFeedbackRoutes } from './routes/search-feedback.js';
 import { registerSubscriptionRoutes } from './routes/subscriptions.js';
 import { registerRunRoutes } from './routes/runs.js';
+import { registerEventsRoutes } from './routes/events.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -22,10 +24,15 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(cookie, {
     secret: process.env.COOKIE_SECRET ?? 'dev-only-cookie-secret-change-me',
   });
+  // The @fastify/sse 0.5.0 default export is wrapped in fastify-plugin,
+  // which produces a value whose TypeScript signature doesn't structurally
+  // match Fastify 5's plugin overloads. The runtime is correct.
+  const ssePlugin = (ssePluginModule as unknown as { default: unknown }).default ?? ssePluginModule;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await app.register(ssePlugin as any);
 
   registerAuthDecorators(app);
 
-  // Resolve session -> user for every request (decorator on onRequest).
   app.addHook('onRequest', async (req) => {
     req.ctx = buildContext(req.id);
     if (req.url === '/healthz') return;
@@ -41,6 +48,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await registerSearchAndFeedbackRoutes(app);
   await registerSubscriptionRoutes(app);
   await registerRunRoutes(app);
+  await registerEventsRoutes(app);
 
   return app;
 }
