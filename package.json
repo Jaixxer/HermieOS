@@ -25,7 +25,8 @@
     "db:migrate": "pnpm --filter @hermieos/db migrate",
     "db:push": "pnpm --filter @hermieos/db push",
     "db:studio": "pnpm --filter @hermieos/db studio",
-    "db:seed": "pnpm --filter @hermieos/db seed"
+    "db:seed": "pnpm --filter @hermieos/db seed",
+    "mcp:e2e": "pnpm --filter @hermieos/mcp e2e"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

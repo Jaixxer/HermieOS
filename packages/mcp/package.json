@@ -10,7 +10,8 @@
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} vitest --no-file-parallelism",
-    "test:run": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} vitest run --no-file-parallelism"
+    "test:run": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} vitest run --no-file-parallelism",
+    "e2e": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} tsx scripts/phase1-e2e.ts"
   },
   "dependencies": {
     "@hermieos/db": "workspace:*",
