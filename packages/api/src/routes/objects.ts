@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import {
+  createObject,
   getObject,
   getObjectRevision,
   listObjectRevisions,
@@ -10,7 +12,46 @@ import {
 import { getObjectTimeline } from '@hermieos/mcp/src/data/timeline.js';
 import { BadRequest, NotFound, Unauthorized, sendError } from '../errors.js';
 
+const objectTypes = ['project', 'research', 'discovery', 'subscription', 'memory', 'task', 'note'] as const;
+const objectStatuses = ['active', 'paused', 'completed', 'archived'] as const;
+
+const createObjectBodySchema = z.object({
+  type: z.enum(objectTypes),
+  title: z.string().min(1).max(200),
+  summary: z.string().max(1000).optional(),
+  body: z.record(z.string(), z.unknown()).default({}),
+  status: z.enum(objectStatuses).optional(),
+  tags: z.array(z.string().min(1).max(50)).max(20).default([]),
+});
+
 export async function registerObjectRoutes(app: FastifyInstance): Promise<void> {
+  // POST /objects — create a new object from the web client / API.
+  // This is the user-facing wrapper around the MCP create_object tool.
+  app.post('/objects', async (req, reply) => {
+    if (!req.user) {
+      return sendError(reply, new Unauthorized(), String(req.id));
+    }
+    const parsed = createObjectBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(
+        reply,
+        new BadRequest('invalid_input', parsed.error.flatten()),
+        String(req.id),
+      );
+    }
+    const obj = await createObject(req.user.id, {
+      type: parsed.data.type,
+      title: parsed.data.title,
+      summary: parsed.data.summary,
+      body: parsed.data.body,
+      status: parsed.data.status,
+      tags: parsed.data.tags,
+      source: 'user',
+    });
+    reply.code(201);
+    return { object: obj };
+  });
+
   app.get('/objects', async (req, reply) => {
     if (!req.user) {
       return sendError(reply, new Unauthorized(), String(req.id));
