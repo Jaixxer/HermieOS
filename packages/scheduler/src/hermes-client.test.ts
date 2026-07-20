@@ -80,3 +80,55 @@ describe('run status helpers', () => {
     expect(isSuccessRunStatus('cancelled')).toBe(false);
   });
 });
+
+describe('HermesClient — session isolation', () => {
+  it('dispatchRun sends x-hermes-session-key: hermieos:user-<id> for per-user Honcho memory scoping', async () => {
+    hermes.setMode({});
+    const dispatched = await client.dispatchRun({
+      hermieosRunId: 'hr-iso-1',
+      userId: 'user-aaaa',
+      kind: 'subscription',
+      input: 'iso test',
+    });
+    expect(dispatched.hermesRunId).toMatch(/^run_/);
+    // The recorded run is keyed by the mcp-session-id we sent in the
+    // body. Verify the per-user session key + Authorization header.
+    const rec = hermes.recorded.find((r) => r.sessionId === 'hermieos-run-hr-iso-1');
+    expect(rec).toBeDefined();
+    expect(rec?.userId).toBe('hermieos:user-user-aaaa');
+    expect(rec?.authorization).toBe('Bearer test-key');
+  });
+
+  it('two users with different ids get different session keys', async () => {
+    hermes.setMode({});
+    await client.dispatchRun({
+      hermieosRunId: 'hr-iso-2',
+      userId: 'alice',
+      kind: 'subscription',
+      input: 'x',
+    });
+    await client.dispatchRun({
+      hermieosRunId: 'hr-iso-3',
+      userId: 'bob',
+      kind: 'subscription',
+      input: 'y',
+    });
+    const alice = hermes.recorded.find((r) => r.sessionId === 'hermieos-run-hr-iso-2');
+    const bob = hermes.recorded.find((r) => r.sessionId === 'hermieos-run-hr-iso-3');
+    expect(alice?.userId).toBe('hermieos:user-alice');
+    expect(bob?.userId).toBe('hermieos:user-bob');
+    expect(alice?.userId).not.toBe(bob?.userId);
+  });
+
+  it('each dispatch carries an mcp-session-id derived from the hermieos run id', async () => {
+    hermes.setMode({});
+    await client.dispatchRun({
+      hermieosRunId: 'hr-iso-4',
+      userId: 'u',
+      kind: 'subscription',
+      input: 'x',
+    });
+    const rec = hermes.recorded.find((r) => r.sessionId === 'hermieos-run-hr-iso-4');
+    expect(rec).toBeDefined();
+  });
+});
