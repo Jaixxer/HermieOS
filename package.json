@@ -31,7 +31,8 @@
     "api:e2e": "pnpm --filter @hermieos/api e2e",
     "demo": "pnpm --filter @hermieos/scripts demo",
     "perf": "pnpm --filter @hermieos/scripts perf",
-    "hermes:profile-gen": "pnpm --filter @hermieos/scripts hermes-profile-gen"
+    "hermes:profile-gen": "pnpm --filter @hermieos/scripts hermes-profile-gen",
+    "hermes:probe": "pnpm --filter @hermieos/scripts hermes-probe"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -7,7 +7,8 @@
     "demo": "tsx src/demo.ts",
     "seed": "tsx src/seed.ts",
     "perf": "tsx src/perf-smoke.ts",
-    "hermes-profile-gen": "tsx src/hermes-profile-gen.ts"
+    "hermes-profile-gen": "tsx src/hermes-profile-gen.ts",
+    "hermes-probe": "tsx src/hermes-probe.ts"
   },
   "dependencies": {
     "@hermieos/db": "workspace:*",
