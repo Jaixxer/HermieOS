@@ -35,6 +35,53 @@ export interface RunDispatchResult {
   status: string;
 }
 
+/**
+ * Hermes run status, as returned by GET /v1/runs/{id}.
+ *
+ * Status values (per Hermes docs): "started" | "running" | "completed" |
+ * "succeeded" | "failed" | "cancelled" | "stopping".
+ */
+export interface RunStatus {
+  runId: string;
+  status: string;
+  output?: string;
+  error?: string;
+  sessionId?: string;
+}
+
+export function isTerminalRunStatus(status: string): boolean {
+  return (
+    status === 'completed' ||
+    status === 'succeeded' ||
+    status === 'failed' ||
+    status === 'cancelled'
+  );
+}
+
+export function isSuccessRunStatus(status: string): boolean {
+  return status === 'completed' || status === 'succeeded';
+}
+
+/**
+ * Shape of GET /v1/capabilities. We only need the feature flags.
+ */
+export interface HermesCapabilities {
+  object?: string;
+  platform?: string;
+  model?: string;
+  auth?: { type: string; required: boolean };
+  features?: {
+    chat_completions?: boolean;
+    responses_api?: boolean;
+    run_submission?: boolean;
+    run_status?: boolean;
+    run_events_sse?: boolean;
+    run_stop?: boolean;
+    [key: string]: boolean | undefined;
+  };
+  endpoints?: Record<string, string>;
+}
+
 export type HermesClientError =
   | { kind: 'http'; status: number; body: string; retryable: boolean }
   | { kind: 'network'; message: string; retryable: boolean };
@@ -147,17 +194,48 @@ export class HermesClient {
     return { hermesRunId: parsed.run_id, status: parsed.status };
   }
 
-  async getRun(runId: string): Promise<{ runId: string; status: string; body: unknown }> {
+  /**
+   * Poll the run's current status. The shape returned by Hermes is
+   * { id, status, output?, session_id?, ... }. We extract the bits
+   * the run-tracker needs.
+   */
+  async getRun(runId: string): Promise<RunStatus> {
     const url = `${this.baseUrl}/v1/runs/${encodeURIComponent(runId)}`;
     const headers = this.headers();
     const body = await this.requestWithRetries(url, { method: 'GET', headers });
-    return { runId, status: 'unknown', body };
+    const parsed = body as {
+      run_id?: string;
+      id?: string;
+      status?: string;
+      output?: string;
+      error?: string;
+      session_id?: string;
+    };
+    return {
+      runId: parsed.run_id ?? parsed.id ?? runId,
+      status: parsed.status ?? 'unknown',
+      output: parsed.output,
+      error: parsed.error,
+      sessionId: parsed.session_id,
+    };
   }
 
   async stopRun(runId: string): Promise<void> {
     const url = `${this.baseUrl}/v1/runs/${encodeURIComponent(runId)}/stop`;
     const headers = this.headers();
     await this.requestWithRetries(url, { method: 'POST', headers, body: '{}' });
+  }
+
+  /**
+   * Probe the gateway. Returns the parsed capabilities body. Does
+   * NOT retry — this is called once at startup and we want a hard
+   * fail if Hermes isn't reachable.
+   */
+  async getCapabilities(): Promise<HermesCapabilities> {
+    const url = `${this.baseUrl}/v1/capabilities`;
+    const headers = this.headers();
+    const body = await this.requestWithRetries(url, { method: 'GET', headers });
+    return body as HermesCapabilities;
   }
 
   private async requestWithRetries(

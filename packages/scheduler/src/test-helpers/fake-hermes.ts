@@ -39,6 +39,25 @@ export interface FakeHermesOptions {
   transientFailures?: number;
   /** If true, every dispatchRun returns 503. */
   alwaysFail?: boolean;
+  /**
+   * Status string to return from GET /v1/runs/{id}. Default 'succeeded'.
+   * For run-tracking tests, set this to 'started' / 'running' / 'failed'
+   * and flip it after a poll to drive the tracker to the next state.
+   */
+  getRunStatus?: string;
+  /**
+   * Per-run override map. If a run id is in this map, return its
+   * status instead of the default. Allows simulating individual
+   * run timelines.
+   */
+  runStatuses?: Record<string, string>;
+  /**
+   * If true, GET /v1/runs/{id} returns the per-call state: the
+   * first call returns 'started', then 'running', then 'succeeded'.
+   * Walks through on every poll. Set getRunStatus to override the
+   * terminal state.
+   */
+  progressOnPoll?: boolean;
 }
 
 export interface FakeHermes {
@@ -59,6 +78,23 @@ export async function makeFakeHermes(initial: FakeHermesOptions = {}): Promise<F
 
   const app = new Hono();
   app.get('/healthz', (c) => c.json({ ok: true, fake: true }));
+  app.get('/v1/capabilities', (c) =>
+    c.json({
+      object: 'hermes.api_server.capabilities',
+      platform: 'fake-hermes',
+      model: 'fake',
+      auth: { type: 'bearer', required: true },
+      features: {
+        chat_completions: true,
+        responses_api: true,
+        run_submission: true,
+        run_status: true,
+        run_events_sse: true,
+        run_stop: true,
+      },
+    }),
+  );
+  const pollCounters = new Map<string, number>();
 
   app.post('/v1/runs', async (c) => {
     const auth = c.req.header('authorization') ?? undefined;
@@ -98,7 +134,18 @@ export async function makeFakeHermes(initial: FakeHermesOptions = {}): Promise<F
   app.get('/v1/runs/:id', (c) => {
     const id = c.req.param('id');
     recordedAll.push({ path: `/v1/runs/${id}`, method: 'GET', receivedAt: Date.now() });
-    return c.json({ run_id: id, status: 'succeeded', output: 'fake' });
+    let status: string;
+    if (opts.runStatuses && id in opts.runStatuses) {
+      status = opts.runStatuses[id]!;
+    } else if (opts.progressOnPoll) {
+      const seen = (pollCounters.get(id) ?? 0) + 1;
+      pollCounters.set(id, seen);
+      const sequence = ['started', 'running', 'succeeded'];
+      status = sequence[Math.min(seen - 1, sequence.length - 1)]!;
+    } else {
+      status = opts.getRunStatus ?? 'succeeded';
+    }
+    return c.json({ run_id: id, status, output: status === 'succeeded' ? 'fake output' : '' });
   });
 
   app.post('/v1/runs/:id/stop', (c) => {
