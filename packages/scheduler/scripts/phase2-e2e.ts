@@ -22,7 +22,8 @@ import { randomBytes } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { createDatabase, closeDatabase, schema } from '@hermieos/db';
 import { HermesClient } from '../src/hermes-client.js';
-import { tickOnce } from '../src/tick.js';
+import { tickOnce, type TickSummary } from '../src/tick.js';
+import { trackRunsOnce, type RunTrackerSummary } from '../src/run-tracker.js';
 import { setDb } from '../src/db.js';
 import { makeFakeHermes, type FakeHermes } from '../src/test-helpers/fake-hermes.js';
 
@@ -43,6 +44,21 @@ const ok = (msg: string): void => {
   console.log(`\u2713 ${msg}`);
   passed++;
 };
+
+interface TickAndTrack {
+  tick: TickSummary;
+  track: RunTrackerSummary;
+}
+
+/**
+ * The tick dispatches; the run tracker reconciles. Tests that want
+ * to assert "this run succeeded" need to drive both.
+ */
+async function tickAndTrack(): Promise<TickAndTrack> {
+  const tick = await tickOnce(client);
+  const track = await trackRunsOnce(client);
+  return { tick, track };
+}
 
 async function cleanup(): Promise<void> {
   await db.execute(sql`delete from feed_events where user_id in (select id from users where email like '%@e2e.local')`);
@@ -106,9 +122,9 @@ async function main(): Promise<void> {
   hermes.recorded.length = 0;
   const u1 = await seedUser('alice');
   const sub1 = await seedSubscription(u1.id, { name: 'Watcher', instruction: 'check feeds', cadence: 'daily' });
-  const s1 = await tickOnce(client);
-  if (s1.subscriptionsDispatched !== 1 || s1.subscriptionsSucceeded !== 1) {
-    fail(`happy-path tick: ${JSON.stringify(s1)}`);
+  const { tick: s1, track: t1 } = await tickAndTrack();
+  if (s1.subscriptionsDispatched !== 1 || t1.runsSettled !== 1) {
+    fail(`happy-path: tick=${JSON.stringify(s1)} track=${JSON.stringify(t1)}`);
   }
   if (hermes.recorded.length !== 1) {
     fail(`expected 1 POST /v1/runs, got ${hermes.recorded.length}`);
@@ -220,8 +236,8 @@ async function main(): Promise<void> {
   hermes.setMode({ transientFailures: 1 });
   const u6 = await seedUser('retry');
   const sub6 = await seedSubscription(u6.id, { name: 'Recovers', instruction: 'check', cadence: 'daily' });
-  const s6 = await tickOnce(client);
-  if (s6.subscriptionsSucceeded !== 1) fail(`retry: ${JSON.stringify(s6)}`);
+  const { tick: s6, track: t6 } = await tickAndTrack();
+  if (t6.runsSettled !== 1) fail(`retry: track=${JSON.stringify(t6)}`);
   if (hermes.recorded.length !== 2) fail(`expected 2 calls (503 + 200), got ${hermes.recorded.length}`);
   const [sub6After] = await db
     .select()
