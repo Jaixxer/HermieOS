@@ -113,9 +113,15 @@ async function main(): Promise<void> {
   if (!health.ok) fail(`API healthz failed (${health.status})`);
   ok('API healthy');
 
-  const hermesHealth = await fetch(`${HERMES}/healthz`);
-  if (!hermesHealth.ok) fail(`fake Hermes not reachable on ${HERMES}`);
-  ok('fake Hermes reachable');
+  // Hermes's API server exposes /health (the real one) and the
+  // fake Hermes exposes /healthz. Try both.
+  let hermesOk = false;
+  for (const path of ['/healthz', '/health']) {
+    const r = await fetch(`${HERMES}${path}`);
+    if (r.ok) { hermesOk = true; break; }
+  }
+  if (!hermesOk) fail(`Hermes not reachable on ${HERMES}`);
+  ok('Hermes reachable');
 
   // 1. sign up
   const email = `demo-${randomBytes(4).toString('hex')}@demo.local`;
