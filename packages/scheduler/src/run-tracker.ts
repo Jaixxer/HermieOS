@@ -125,7 +125,7 @@ export async function trackRunsOnce(
   client: HermesClient,
   opts: RunTrackerOptions & { now?: () => Date } = {},
 ): Promise<RunTrackerSummary> {
-  const startedAt = (opts.now ?? Date.now)();
+  const startedAt = opts.now ? opts.now().getTime() : Date.now();
   const deadlineMs = opts.deadlineMs ?? DEFAULT_DEADLINE_MS;
   const db = opts.dbOverride ?? getDb();
   const summary: RunTrackerSummary = {
@@ -150,7 +150,10 @@ export async function trackRunsOnce(
   const now = startedAt;
   for (const run of inFlight) {
     // Has it been running longer than the deadline? Force-stop and mark cancelled.
-    const elapsed = now - run.startedAt.getTime();
+    const runStartedMs = run.startedAt instanceof Date
+      ? run.startedAt.getTime()
+      : Number(run.startedAt);
+    const elapsed = now - runStartedMs;
     if (elapsed > deadlineMs) {
       try {
         await client.stopRun(run.hermesRunId);

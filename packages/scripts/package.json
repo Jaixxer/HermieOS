@@ -8,7 +8,8 @@
     "seed": "tsx src/seed.ts",
     "perf": "tsx src/perf-smoke.ts",
     "hermes-profile-gen": "tsx src/hermes-profile-gen.ts",
-    "hermes-probe": "tsx src/hermes-probe.ts"
+    "hermes-probe": "tsx src/hermes-probe.ts",
+    "hermes-skills-deploy": "tsx src/hermes-skills-deploy.ts"
   },
   "dependencies": {
     "@hermieos/db": "workspace:*",
@@ -18,6 +19,7 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.9"
   }
 }

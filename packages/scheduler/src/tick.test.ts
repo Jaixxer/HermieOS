@@ -5,7 +5,7 @@ import { createDatabase, schema, closeDatabase, type Database } from '@hermieos/
 import { HermesClient } from './hermes-client.js';
 import { tickOnce, type TickSummary } from './tick.js';
 import { trackRunsOnce } from './run-tracker.js';
-import { setDb, getDb } from './db.js';
+import { setDb, getDb, forceReleaseSchedulerLock } from './db.js';
 import { makeFakeHermes, type FakeHermes } from './test-helpers/fake-hermes.js';
 
 /**
@@ -87,9 +87,15 @@ beforeEach(async () => {
   hermes.setMode({});
   hermes.recorded.length = 0;
   hermes.recordedAll.length = 0;
+  // Force-release any advisory lock that may have leaked from a
+  // previous test run (the underlying postgres connection pool may
+  // have rotated, leaving the lock held by a session we no longer
+  // control).
+  await forceReleaseSchedulerLock();
 });
 afterEach(async () => {
   await cleanup();
+  await forceReleaseSchedulerLock();
 });
 
 describe('tickOnce — subscription dispatch', () => {
@@ -107,8 +113,10 @@ describe('tickOnce — subscription dispatch', () => {
     expect(track.runsSettled).toBe(1);
     expect(track.runsFailed).toBe(0);
     expect(hermes.recorded.length).toBe(1);
-    expect(hermes.recorded[0]?.input).toContain('[kind=subscription]');
-    expect(hermes.recorded[0]?.input).toContain('check');
+    const envelope = JSON.parse(hermes.recorded[0]?.input ?? '{}');
+    expect(envelope.event).toBe('subscription');
+    expect(envelope.objective).toBeTruthy();
+    expect(envelope.context.subscription.instruction).toBe('check');
     expect(hermes.recorded[0]?.sessionKey).toBe(`hermieos:user-${u.id}`);
 
     const [updated] = await db
@@ -329,9 +337,14 @@ describe('tickOnce — feedback review', () => {
 
     const summary = await tickOnce(client);
     expect(summary.feedbackReviewsDispatched).toBe(1);
-    const reviewCall = hermes.recorded.find(
-      (r) => r.input.includes('[kind=feedback_review]') && r.input.includes('3 feedback'),
-    );
+    const reviewCall = hermes.recorded.find((r) => {
+      try {
+        const e = JSON.parse(r.input);
+        return e.event === 'feedback_review' && Array.isArray(e.context.feedback_rows);
+      } catch {
+        return false;
+      }
+    });
     expect(reviewCall).toBeDefined();
     expect(reviewCall?.sessionKey).toBe(`hermieos:user-${u.id}`);
   });

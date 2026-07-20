@@ -340,25 +340,150 @@ export async function emitSystemNotification(
 const SCHEDULER_LOCK_KEY = 91337; // arbitrary 32-bit int
 
 /**
- * Try to acquire a Postgres advisory lock so only one scheduler process
- * ticks at a time. Returns true if we got it.
+ * A dedicated-connection handle for the scheduler advisory lock.
  *
- * The lock is session-scoped (released when the connection closes).
- * We hold it for the duration of a single tick; if the tick crashes
- * mid-way, Postgres releases it on connection close.
+ * Postgres advisory locks are session-scoped: they live as long as
+ * the connection that holds them. If we use the pooled drizzle
+ * client, the pool may rotate the connection between calls, and
+ * we'd lose the lock mid-tick.
+ *
+ * The fix: open a *dedicated* connection (bypassing the pool) for
+ * the duration of the lock, and close it on release. The connection
+ * lifecycle is bound to the lock — close it, drop the lock. This
+ * is the standard pattern for postgres advisory locks; we just have
+ * to be explicit about it.
+ *
+ * The class is the right shape because it makes the connection
+ * lifecycle obvious to callers. `acquire()` returns a
+ * SchedulerLock or null. If non-null, the caller owns the lock
+ * and MUST call `release()` (which closes the connection). The
+ * connection is also closed if the GC ever drops the reference,
+ * via the registered finalizer — best-effort, in case the caller
+ * forgot to release.
  */
+import postgres from 'postgres';
+
+// Minimal structural type for a reserved postgres.js connection.
+// postgres.js's ReservedSql<TTypes> extends Sql<TTypes>; we narrow
+// to the methods we actually use so we don't pull the full
+// postgres types into the rest of the codebase.
+type ReserveSql = {
+  (
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<unknown>;
+  // Released (returned to the pool) via release(). To fully
+  // destroy the client, call .end() on the parent Sql.
+  release(): void;
+};
+
+export class SchedulerLock {
+  private released = false;
+  private readonly conn: ReserveSql;
+
+  private constructor(conn: ReserveSql) {
+    this.conn = conn;
+  }
+
+  static async acquire(): Promise<SchedulerLock | null> {
+    const url = process.env.DATABASE_URL;
+    if (!url) {
+      throw new Error('DATABASE_URL is not set');
+    }
+    // One-connection client. Keep it open for the lock's lifetime
+    // and close it in release(). Re-creating on every tick is fine
+    // (it's a 1-connection client, the cost is one TCP setup).
+    const sql = postgres(url, { max: 1, prepare: false });
+    try {
+      const reserved = (await sql.reserve()) as unknown as ReserveSql;
+      const rows = (await reserved`select pg_try_advisory_lock(${SCHEDULER_LOCK_KEY}) as ok`) as unknown[];
+      const row = Array.isArray(rows) ? rows[0] : null;
+      if (row && (row as { ok?: boolean }).ok === true) {
+        return new SchedulerLock(reserved);
+      }
+      // Did not get the lock. Release the reserved connection and
+      // close the client.
+      reserved.release();
+      try {
+        await sql.end({ timeout: 1 });
+      } catch {
+        // ignore
+      }
+    } catch (err) {
+      try {
+        await sql.end({ timeout: 1 });
+      } catch {
+        // ignore
+      }
+      throw err;
+    }
+    return null;
+  }
+
+  /**
+   * Release the lock and close the connection. Safe to call
+   * multiple times — subsequent calls are no-ops.
+   *
+   * Closing the connection drops the session-scoped advisory lock
+   * automatically. We still call pg_advisory_unlock explicitly
+   * for clarity (and so the lock drops the instant release()
+   * runs, not when the GC closes the connection).
+   */
+  async release(): Promise<void> {
+    if (this.released) return;
+    this.released = true;
+    try {
+      await this.conn`select pg_advisory_unlock(${SCHEDULER_LOCK_KEY})`;
+    } catch {
+      // ignore: connection may have died; lock is GC'd on close.
+    } finally {
+      try {
+        this.conn.release();
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+export async function forceReleaseSchedulerLock(): Promise<void> {
+  const url = process.env.DATABASE_URL;
+  if (!url) return;
+  const sql = postgres(url, { max: 1, prepare: false });
+  try {
+    const conn = (await sql.reserve()) as unknown as ReserveSql;
+    try {
+      await conn`select pg_advisory_unlock(${SCHEDULER_LOCK_KEY})`;
+    } catch {
+      // ignore
+    } finally {
+      conn.release();
+    }
+  } catch {
+    // DB unreachable; nothing to release
+  } finally {
+    try {
+      await sql.end({ timeout: 1 });
+    } catch {
+      // ignore
+    }
+  }
+}
+
+let _activeLock: SchedulerLock | null = null;
+
 export async function tryAcquireSchedulerLock(): Promise<boolean> {
-  const db = getDb();
-  const rows = await db.$client<{ ok: boolean }[]>`
-    select pg_try_advisory_lock(${SCHEDULER_LOCK_KEY}) as ok
-  `;
-  const row = Array.isArray(rows) ? rows[0] : null;
-  return row?.ok === true;
+  if (_activeLock) return false;
+  const lock = await SchedulerLock.acquire();
+  if (!lock) return false;
+  _activeLock = lock;
+  return true;
 }
 
 export async function releaseSchedulerLock(): Promise<void> {
-  const db = getDb();
-  await db.$client`select pg_advisory_unlock(${SCHEDULER_LOCK_KEY})`;
+  if (!_activeLock) return;
+  await _activeLock.release();
+  _activeLock = null;
 }
 
 // --- Per-user mcp_token lookup (for system_notify path) ---
@@ -407,6 +532,142 @@ export async function listUsersWithEnabledScheduler(): Promise<string[]> {
     .select({ id: schema.users.id, enabled: schema.users.schedulerEnabled })
     .from(schema.users);
   return rows.filter((r) => r.enabled).map((r) => r.id);
+}
+
+// --- Context fetching (used to build the dispatch envelope) ---
+
+/**
+ * The 10 most recent active objects for a user, regardless of type.
+ * Used as a starting point for a subscription's "related objects"
+ * context. The skill decides what's actually relevant.
+ */
+export async function findRecentObjects(
+  userId: string,
+  limit = 10,
+): Promise<Array<{
+  id: string;
+  type: schema.ObjectRow['type'];
+  title: string;
+  summary: string | null;
+  status: schema.ObjectRow['status'];
+  priority: number;
+  updatedAt: Date;
+}>> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: schema.objects.id,
+      type: schema.objects.type,
+      title: schema.objects.title,
+      summary: schema.objects.summary,
+      status: schema.objects.status,
+      priority: schema.objects.priority,
+      updatedAt: schema.objects.updatedAt,
+    })
+    .from(schema.objects)
+    .where(and(eq(schema.objects.userId, userId), isNull(schema.objects.archivedAt)))
+    .orderBy(sql`${schema.objects.updatedAt} desc`)
+    .limit(limit);
+  return rows;
+}
+
+/**
+ * Feedback rows for a user since a given timestamp, joined with the
+ * object they refer to. Used for the subscription "recent_feedback"
+ * context AND for the feedback-review context.
+ */
+export async function findRecentFeedback(
+  userId: string,
+  since: Date,
+  limit = 50,
+): Promise<Array<{
+  id: string;
+  kind: schema.Feedback['kind'];
+  payload: Record<string, unknown>;
+  createdAt: Date;
+  object: {
+    id: string;
+    type: schema.ObjectRow['type'];
+    title: string;
+    summary: string | null;
+    status: schema.ObjectRow['status'];
+    priority: number;
+  };
+}>> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: schema.feedback.id,
+      kind: schema.feedback.kind,
+      payload: schema.feedback.payload,
+      createdAt: schema.feedback.createdAt,
+      objId: schema.objects.id,
+      objType: schema.objects.type,
+      objTitle: schema.objects.title,
+      objSummary: schema.objects.summary,
+      objStatus: schema.objects.status,
+      objPriority: schema.objects.priority,
+    })
+    .from(schema.feedback)
+    .innerJoin(schema.objects, eq(schema.feedback.objectId, schema.objects.id))
+    .where(
+      and(
+        eq(schema.feedback.userId, userId),
+        sql`${schema.feedback.createdAt} > ${since.toISOString()}`,
+      ),
+    )
+    .orderBy(sql`${schema.feedback.createdAt} desc`)
+    .limit(limit);
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    payload: (r.payload ?? {}) as Record<string, unknown>,
+    createdAt: r.createdAt,
+    object: {
+      id: r.objId,
+      type: r.objType,
+      title: r.objTitle,
+      summary: r.objSummary,
+      status: r.objStatus,
+      priority: r.objPriority,
+    },
+  }));
+}
+
+/**
+ * The most recent feed events for a user, since a given timestamp.
+ * Used to know what the user has already seen in their Feed.
+ */
+export async function findRecentFeedEvents(
+  userId: string,
+  since: Date,
+  limit = 50,
+): Promise<Array<{
+  id: string;
+  kind: schema.FeedEvent['kind'];
+  title: string;
+  objectId: string | null;
+  createdAt: Date;
+}>> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: schema.feedEvents.id,
+      kind: schema.feedEvents.kind,
+      title: schema.feedEvents.title,
+      objectId: schema.feedEvents.objectId,
+      createdAt: schema.feedEvents.createdAt,
+    })
+    .from(schema.feedEvents)
+    .where(
+      and(
+        eq(schema.feedEvents.userId, userId),
+        sql`${schema.feedEvents.createdAt} > ${since.toISOString()}`,
+      ),
+    )
+    .orderBy(sql`${schema.feedEvents.createdAt} desc`)
+    .limit(limit);
+  return rows;
 }
 
 export async function _setUserSchedulerEnabled(

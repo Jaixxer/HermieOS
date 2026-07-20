@@ -32,7 +32,8 @@
     "demo": "pnpm --filter @hermieos/scripts demo",
     "perf": "pnpm --filter @hermieos/scripts perf",
     "hermes:profile-gen": "pnpm --filter @hermieos/scripts hermes-profile-gen",
-    "hermes:probe": "pnpm --filter @hermieos/scripts hermes-probe"
+    "hermes:probe": "pnpm --filter @hermieos/scripts hermes-probe",
+    "hermes:skills-deploy": "pnpm --filter @hermieos/scripts hermes-skills-deploy"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

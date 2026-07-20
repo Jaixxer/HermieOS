@@ -202,9 +202,19 @@ async function main(): Promise<void> {
   }
   const s4 = await tickOnce(client);
   if (s4.feedbackReviewsDispatched !== 1) fail(`feedback review: ${JSON.stringify(s4)}`);
-  const reviewCall = hermes.recorded.find((r) => r.input.includes('[kind=feedback_review]'));
+  const reviewCall = hermes.recorded.find((r) => {
+    try {
+      const e = JSON.parse(r.input);
+      return e.event === 'feedback_review';
+    } catch {
+      return false;
+    }
+  });
   if (!reviewCall) fail('expected a feedback_review dispatch');
-  if (!reviewCall?.input.includes('3 feedback')) fail('expected 3 feedback in the prompt');
+  const envelope = JSON.parse(reviewCall?.input ?? '{}') as { context: { feedback_rows: unknown[] } };
+  if (!Array.isArray(envelope.context.feedback_rows) || envelope.context.feedback_rows.length !== 3) {
+    fail(`expected 3 feedback rows in the envelope, got ${envelope.context.feedback_rows?.length ?? 'n/a'}`);
+  }
   ok('feedback review: dispatched when 3 feedback signals pending');
 
   // ----- 5. lock: second tick while the first holds the lock -----
