@@ -6,7 +6,8 @@
   "scripts": {
     "demo": "tsx src/demo.ts",
     "seed": "tsx src/seed.ts",
-    "perf": "tsx src/perf-smoke.ts"
+    "perf": "tsx src/perf-smoke.ts",
+    "hermes-profile-gen": "tsx src/hermes-profile-gen.ts"
   },
   "dependencies": {
     "@hermieos/db": "workspace:*",

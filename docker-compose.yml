@@ -1,5 +1,17 @@
 name: hermieos
 
+# Full local stack: Postgres, API, MCP, scheduler, fake-hermes (default),
+# and the real Hermes (opt-in via `docker compose --profile real up`).
+#
+# Two profiles:
+#   - default: postgres, api, mcp, scheduler, fake-hermes
+#       Use for tests, CI, and the demo. No real Hermes needed.
+#       `docker compose up`
+#   - real: also brings up the real Hermes container wired to the MCP
+#       Use for Phase 6+ work. Requires HERMES_USER_EMAIL set and
+#       a HermieOS user with that email already in the DB.
+#       `docker compose --profile real up`
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -19,9 +31,8 @@ services:
       timeout: 5s
       retries: 10
 
-  # Hermes gateway stub. In MVP this is a "fake Hermes" that records
-  # the run envelope and replies 200; swap to a real Hermes image for
-  # Phase 6.
+  # The "fake Hermes" stand-in. Same /v1 surface as the real thing,
+  # records envelopes, returns immediately. Use for tests and the demo.
   fake-hermes:
     image: node:22-alpine
     container_name: hermieos-fake-hermes
@@ -80,15 +91,80 @@ services:
     environment:
       SERVICE: scheduler
       DATABASE_URL: postgres://hermieos:hermieos@postgres:5432/hermieos
-      HERMES_GATEWAY_URL: http://fake-hermes:4100
+      # In the default profile we point at fake-hermes. With --profile real,
+      # the hermes service is on the same compose network; the scheduler
+      # can reach it at http://hermes:8642.
+      HERMES_GATEWAY_URL: ${HERMES_GATEWAY_URL:-http://fake-hermes:4100}
+      HERMES_API_KEY: ${HERMES_API_KEY:-demo-key}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       NODE_ENV: production
       TICK_INTERVAL_MS: ${TICK_INTERVAL_MS:-60000}
+      RUN_TRACKER_POLL_MS: ${RUN_TRACKER_POLL_MS:-5000}
+      RUN_DEADLINE_MS: ${RUN_DEADLINE_MS:-300000}
     depends_on:
       postgres:
         condition: service_healthy
       fake-hermes:
         condition: service_started
+      api:
+        condition: service_started
+      mcp:
+        condition: service_started
+
+  # Real Hermes. Opt-in via `docker compose --profile real up`.
+  # Reads profile config from the hermes-config volume (shared with
+  # the hermes-init generator). The generator runs first and produces
+  # profiles/<name>/config.yaml + .env from the user's mcp_token.
+  hermes-init:
+    build:
+      context: .
+      dockerfile: packages/scripts/Dockerfile
+    container_name: hermieos-hermes-init
+    environment:
+      DATABASE_URL: postgres://hermieos:hermieos@postgres:5432/hermieos
+      HERMES_USER_EMAIL: ${HERMES_USER_EMAIL:-}
+      HERMES_PROFILE_NAME: ${HERMES_PROFILE_NAME:-default}
+      HERMES_HOME: /opt/hermes
+      HERMES_API_PORT: ${HERMES_API_PORT:-8642}
+      HERMES_API_HOST: ${HERMES_API_HOST:-0.0.0.0}
+      HERMES_MCP_URL: ${HERMES_MCP_URL:-http://mcp:3002/mcp}
+      HERMES_MODEL: ${HERMES_MODEL:-hermes-agent}
+      HERMES_INFERENCE_PROVIDER: ${HERMES_INFERENCE_PROVIDER:-auto}
+      HERMES_INFERENCE_BASE_URL: ${HERMES_INFERENCE_BASE_URL:-}
+    volumes:
+      - hermes-data:/opt/hermes
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["real"]
+    restart: "no"
+
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    container_name: hermieos-hermes
+    restart: unless-stopped
+    command: ["gateway", "run"]
+    environment:
+      # When Hermes reads the profile, it gets these from profiles/<name>/.env
+      # (set by hermes-init). We do NOT pass them here on purpose: the docs
+      # warn that a container-wide API_SERVER_KEY would collide between
+      # profiles. Each profile owns its own .env.
+      HERMES_DASHBOARD: ${HERMES_DASHBOARD:-1}
+    volumes:
+      - hermes-data:/opt/hermes
+    ports:
+      - "${HERMES_API_PORT:-8642}:8642"
+      - "9119:9119"
+    depends_on:
+      hermes-init:
+        condition: service_completed_successfully
+    profiles: ["real"]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
 
 volumes:
   hermieos-pgdata:
+  hermes-data:
