@@ -58,6 +58,8 @@ export interface FakeHermesOptions {
    * terminal state.
    */
   progressOnPoll?: boolean;
+  /** Error string returned in the getRun body when status='failed'. */
+  runError?: string;
 }
 
 export interface FakeHermes {
@@ -145,7 +147,12 @@ export async function makeFakeHermes(initial: FakeHermesOptions = {}): Promise<F
     } else {
       status = opts.getRunStatus ?? 'succeeded';
     }
-    return c.json({ run_id: id, status, output: status === 'succeeded' ? 'fake output' : '' });
+    return c.json({
+      run_id: id,
+      status,
+      output: status === 'succeeded' ? 'fake output' : '',
+      error: status === 'failed' ? (opts.runError ?? 'failed') : undefined,
+    });
   });
 
   app.post('/v1/runs/:id/stop', (c) => {

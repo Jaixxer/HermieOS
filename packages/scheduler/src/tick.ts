@@ -200,19 +200,11 @@ async function dispatchSubscriptionsForUser(
       });
       await markRunDispatched(runId, dispatched.hermesRunId, new Date());
 
-      // Polling is the MVP strategy; we don't poll here because the run is
-      // tracked out-of-band. Mark "running" (already done) and let the
-      // status update come from the run-tracking layer.
-      // For Phase 2, we optimistically mark as succeeded after dispatch
-      // because the contract is "scheduler dispatches, status is tracked
-      // elsewhere." Failure modes (Hermes never picks it up) are caught
-      // by the run-tracking layer's deadline-based cancellation.
-
-      // Mark as succeeded optimistically. The deadline watcher (post-MVP)
-      // will move in-flight runs to failed/cancelled.
-      await markRunSucceeded(runId, new Date());
-      await markSubscriptionSucceeded(sub.id, new Date());
-      summary.subscriptionsSucceeded += 1;
+      // The run tracker (run-tracker.ts) takes it from here. It polls
+      // Hermes for status, settles the run as succeeded/failed/cancelled,
+      // and advances the subscription's next_run_at on success or applies
+      // backoff on failure. The tick loop's job is to dispatch and get
+      // out of the way; reconciliation happens in the tracker.
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await markRunFailed(runId, msg, new Date());

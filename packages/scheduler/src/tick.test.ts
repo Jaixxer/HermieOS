@@ -3,9 +3,20 @@ import { sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { createDatabase, schema, closeDatabase, type Database } from '@hermieos/db';
 import { HermesClient } from './hermes-client.js';
-import { tickOnce } from './tick.js';
+import { tickOnce, type TickSummary } from './tick.js';
+import { trackRunsOnce } from './run-tracker.js';
 import { setDb, getDb } from './db.js';
 import { makeFakeHermes, type FakeHermes } from './test-helpers/fake-hermes.js';
+
+/**
+ * The tick dispatches; the run tracker reconciles. Tests that want
+ * to assert "this run succeeded" need to drive both.
+ */
+async function tickAndTrack(): Promise<{ tick: TickSummary; track: import('./run-tracker.js').RunTrackerSummary }> {
+  const tick = await tickOnce(client);
+  const track = await trackRunsOnce(client);
+  return { tick, track };
+}
 
 let db: Database;
 let hermes: FakeHermes;
@@ -87,12 +98,14 @@ describe('tickOnce — subscription dispatch', () => {
     const before = Date.now();
     const sub = await seedSubscription(u.id, { name: 'X', instruction: 'check', cadence: 'daily' });
 
-    const summary = await tickOnce(client);
-    expect(summary.lockAcquired).toBe(true);
-    expect(summary.usersScanned).toBe(1);
-    expect(summary.subscriptionsDispatched).toBe(1);
-    expect(summary.subscriptionsSucceeded).toBe(1);
-    expect(summary.subscriptionsFailed).toBe(0);
+    const { tick, track } = await tickAndTrack();
+    expect(tick.lockAcquired).toBe(true);
+    expect(tick.usersScanned).toBe(1);
+    expect(tick.subscriptionsDispatched).toBe(1);
+    // The run tracker is what reconciles the run as succeeded and
+    // advances the subscription's next_run_at. The tick just dispatches.
+    expect(track.runsSettled).toBe(1);
+    expect(track.runsFailed).toBe(0);
     expect(hermes.recorded.length).toBe(1);
     expect(hermes.recorded[0]?.input).toContain('[kind=subscription]');
     expect(hermes.recorded[0]?.input).toContain('check');
@@ -102,9 +115,8 @@ describe('tickOnce — subscription dispatch', () => {
       .select()
       .from(schema.subscriptions)
       .where(sql`${schema.subscriptions.id} = ${sub.id}`);
-    expect(updated?.nextRunAt.getTime()).toBeGreaterThan(before);
     expect(updated?.consecutiveFailures).toBe(0);
-    expect(updated?.lastError).toBeNull();
+    expect(updated?.nextRunAt?.getTime()).toBeGreaterThan(before);
   });
 
   it('does not dispatch a subscription whose next_run_at is in the future', async () => {
@@ -239,10 +251,11 @@ describe('tickOnce — failure handling', () => {
     const sub = await seedSubscription(u.id, { name: 'Recover', instruction: 'check', cadence: 'daily' });
 
     // First tick: Hermes returns 503 once, then 200. The retry succeeds,
-    // so the run is marked succeeded (subscribedSucceeded=1).
-    const s1 = await tickOnce(client);
-    expect(s1.subscriptionsSucceeded).toBe(1);
-    expect(s1.subscriptionsFailed).toBe(0);
+    // so the run tracker settles the run as succeeded.
+    const { tick: s1, track: t1 } = await tickAndTrack();
+    expect(s1.subscriptionsDispatched).toBe(1);
+    expect(t1.runsSettled).toBe(1);
+    expect(t1.runsFailed).toBe(0);
     expect(hermes.recorded.length).toBe(2); // one 503 + one 200
 
     // Second tick (sanity): same path, succeeds again.
@@ -254,8 +267,9 @@ describe('tickOnce — failure handling', () => {
       })
       .where(sql`${schema.subscriptions.id} = ${sub.id}`);
 
-    const s2 = await tickOnce(client);
-    expect(s2.subscriptionsSucceeded).toBe(1);
+    const { tick: s2, track: t2 } = await tickAndTrack();
+    expect(s2.subscriptionsDispatched).toBe(1);
+    expect(t2.runsSettled).toBe(1);
     const [updated] = await db
       .select()
       .from(schema.subscriptions)
@@ -400,7 +414,9 @@ describe('tickOnce — chaos', () => {
 
     // Tick 2: Hermes is healthy. The subscription is still due
     // (next_retry_at is in the past because backoff is short, but
-    // we nudge it just in case).
+    // we nudge it just in case). The tick dispatches, then the
+    // tracker settles the run as succeeded and advances
+    // next_run_at.
     hermes.setMode({ runStatus: 200 });
     await db
       .update(schema.subscriptions)
@@ -409,8 +425,8 @@ describe('tickOnce — chaos', () => {
         nextRetryAt: new Date(Date.now() - 1000),
       })
       .where(sql`${schema.subscriptions.id} = ${sub.id}`);
-    const s2 = await tickOnce(client);
-    expect(s2.subscriptionsSucceeded).toBe(1);
+    const { track: t2 } = await tickAndTrack();
+    expect(t2.runsSettled).toBe(1);
     const [after2] = await db
       .select()
       .from(schema.subscriptions)

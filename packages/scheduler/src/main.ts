@@ -1,6 +1,11 @@
 import { HermesClient } from './hermes-client.js';
 import { schedule, tickOnce } from './tick.js';
+import { startRunTracker } from './run-tracker.js';
 import { createLogger } from './logger.js';
+
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+}
 
 const log = createLogger();
 const tickMs = Number(process.env.SCHEDULER_TICK_MS ?? 60_000);
@@ -9,6 +14,8 @@ const oneShot = process.env.SCHEDULER_ONE_SHOT === '1' || process.env.SCHEDULER_
 
 const baseUrl = process.env.HERMES_GATEWAY_URL;
 const apiKey = process.env.HERMES_API_KEY;
+const runTrackerPollMs = Number(process.env.RUN_TRACKER_POLL_MS ?? 5_000);
+const runDeadlineMs = Number(process.env.RUN_DEADLINE_MS ?? 5 * 60_000);
 
 let client: HermesClient | null = null;
 if (!dryRun && baseUrl && apiKey) {
@@ -35,8 +42,17 @@ async function main(): Promise<void> {
   const handle = schedule(client, tickMs, { dryRun });
   log.info({ tickMs, dryRun }, 'scheduler started');
 
+  // Run tracker runs alongside the tick loop. Same HermesClient,
+  // same DB. Different SQL tables, no contention.
+  const tracker = startRunTracker(client, {
+    pollIntervalMs: runTrackerPollMs,
+    deadlineMs: runDeadlineMs,
+  });
+  log.info({ pollMs: runTrackerPollMs, deadlineMs: runDeadlineMs }, 'run tracker started');
+
   const stop = (): void => {
     handle.stop();
+    tracker.stop();
     log.info('scheduler stopped');
     process.exit(0);
   };
