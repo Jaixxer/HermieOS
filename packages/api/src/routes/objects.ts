@@ -10,7 +10,7 @@ import {
   archiveObject,
 } from '@hermieos/mcp/src/data/objects.js';
 import { getObjectTimeline } from '@hermieos/mcp/src/data/timeline.js';
-import { getRelatedObjectsSummary } from '@hermieos/mcp/src/data/relationships.js';
+import { getRelatedObjectsSummary, getUserGraph } from '@hermieos/mcp/src/data/relationships.js';
 import { BadRequest, NotFound, Unauthorized, sendError } from '../errors.js';
 
 const objectTypes = [
@@ -172,5 +172,13 @@ export async function registerObjectRoutes(app: FastifyInstance): Promise<void> 
       source: 'user',
     });
     return { object: obj };
+  });
+
+  // GET /graph — full relationship graph for visualization
+  app.get('/graph', async (req, reply) => {
+    if (!req.user) {
+      return sendError(reply, new Unauthorized(), String(req.id));
+    }
+    return getUserGraph(req.user.id);
   });
 }

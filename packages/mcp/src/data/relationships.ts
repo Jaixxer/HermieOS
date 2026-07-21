@@ -383,3 +383,68 @@ export async function traverseGraph(
     edgeCount,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Full graph — all relationships for visualization
+// ---------------------------------------------------------------------------
+
+export interface GraphData {
+  nodes: Array<{ id: string; title: string; type: string; priority: number }>;
+  links: Array<{ source: string; target: string; kind: string; confidence: number; reason: string }>;
+}
+
+/**
+ * Returns the full relationship graph for a user, suitable for
+ * force-directed visualization. Nodes are objects; links are
+ * relationships. Both directions are included so the graph is
+ * visually complete.
+ */
+export async function getUserGraph(userId: string): Promise<GraphData> {
+  const db = getDb();
+
+  // Fetch all relationships for this user
+  const rels = await db
+    .select()
+    .from(schema.objectRelationships)
+    .where(eq(schema.objectRelationships.userId, userId));
+
+  // Collect unique object IDs
+  const objectIds = new Set<string>();
+  for (const r of rels) {
+    objectIds.add(r.fromId);
+    objectIds.add(r.toId);
+  }
+
+  // Fetch all referenced objects
+  const nodes: GraphData['nodes'] = [];
+  if (objectIds.size > 0) {
+    const objs = await db
+      .select({
+        id: schema.objects.id,
+        title: schema.objects.title,
+        type: schema.objects.type,
+        priority: schema.objects.priority,
+      })
+      .from(schema.objects)
+      .where(inArray(schema.objects.id, [...objectIds]));
+
+    for (const o of objs) {
+      nodes.push({
+        id: o.id,
+        title: o.title,
+        type: o.type,
+        priority: o.priority,
+      });
+    }
+  }
+
+  const links: GraphData['links'] = rels.map((r) => ({
+    source: r.fromId,
+    target: r.toId,
+    kind: r.kind,
+    confidence: r.confidence,
+    reason: r.reason,
+  }));
+
+  return { nodes, links };
+}

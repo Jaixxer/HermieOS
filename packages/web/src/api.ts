@@ -215,6 +215,9 @@ export const api = {
   removePushSubscription(body: { endpoint: string }): Promise<{ ok: true }> {
     return request('/me/push-subscription', { method: 'DELETE', body: JSON.stringify(body) });
   },
+  graph(): Promise<{ nodes: Array<{ id: string; title: string; type: string; priority: number }>; links: Array<{ source: string; target: string; kind: string; confidence: number; reason: string }> }> {
+    return request('/graph');
+  },
 };
 
 export function sseUrl(): string {

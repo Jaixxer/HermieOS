@@ -9,6 +9,7 @@ import { ObjectDetailPage } from './pages/ObjectDetailPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { McpTokenPage } from './pages/McpTokenPage';
+import { GraphPage } from './pages/GraphPage';
 
 function RequireAuth({ children }: { children: ReactNode }): React.JSX.Element {
   const { user, loading } = useAuth();
@@ -36,6 +37,7 @@ export function App(): React.JSX.Element {
         <Route path="subscriptions" element={<SubscriptionsPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="settings/mcp-token" element={<McpTokenPage />} />
+        <Route path="graph" element={<GraphPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -33,6 +33,7 @@ export function Layout(): React.JSX.Element {
           <nav className="flex items-center gap-1 text-sm">
             <NavTab to="/">Feed{(unread?.unread ?? 0) > 0 ? <span className="ml-1 badge">{unread!.unread}</span> : null}</NavTab>
             <NavTab to="/subscriptions">Subscriptions</NavTab>
+            <NavTab to="/graph">Graph</NavTab>
             <NavTab to="/settings">Settings</NavTab>
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
