@@ -3,7 +3,7 @@
  *
  * Reads the per-user `mcp_token` from Postgres and merges a
  * `mcp_servers.hermieos` block into the user's existing Hermes
- * profile config. Preserves any other settings (model, other MCP
+ * `config.yaml`. Preserves any other settings (model, other MCP
  * servers, tool_loop_guardrails, etc.).
  *
  * Why merge and not overwrite: the user may have other MCP
@@ -15,22 +15,46 @@
  * a token rotation). The API_KEY on the .env is also regenerated
  * only if missing.
  *
+ * Config file location: when HERMES_PROFILE_NAME is set, the
+ * config is written to $HERMES_HOME/profiles/<name>/config.yaml.
+ * Otherwise the main $HERMES_HOME/config.yaml is used. The latter
+ * is what the gateway actually reads by default — profiles are
+ * selected explicitly via `hermes profile use` or the gateway's
+ * --profile flag. The "do not create profiles in hermes" mode
+ * (HERMES_PROFILE_NAME unset) writes to the main config so the
+ * running gateway picks it up without restarting profiles.
+ *
+ * MCP server URL: derived from HERMIEOS_MCP_MODE.
+ *   - "host"  : MCP runs on the Docker host; default URL is
+ *               http://host.docker.internal:3002/mcp (works when
+ *               Hermes is in a container with host-gateway).
+ *   - "docker": MCP runs in a sibling container on the same Docker
+ *               network; default URL is http://<HERMES_MCP_CONTAINER_NAME>:3002/mcp
+ *               (default container name: hermieos-mcp).
+ * Set HERMES_MCP_URL to override explicitly.
+ *
  * Env:
- *   DATABASE_URL             - Postgres URL (required)
- *   HERMES_USER_EMAIL        - HermieOS user email (required)
- *   HERMES_PROFILE_NAME      - profile dir, default 'default'
- *   HERMES_HOME              - Hermes data root, default /opt/hermes
- *   HERMES_API_PORT          - API server port, default 8642
- *   HERMES_API_HOST          - API server bind, default 127.0.0.1
- *   HERMES_MCP_URL           - URL of the HermieOS MCP server
- *   HERMES_MCP_TOKEN         - Override the per-user token (skip DB)
- *   HERMES_API_KEY           - Override the API server bearer
+ *   DATABASE_URL                - Postgres URL (required)
+ *   HERMES_USER_EMAIL           - HermieOS user email (required)
+ *   HERMES_HOME                 - Hermes data root, default /opt/hermes
+ *   HERMES_PROFILE_NAME         - if set, write to profiles/<name>/{config.yaml,.env}
+ *                                 otherwise the main $HERMES_HOME/{config.yaml,.env}
+ *   HERMES_API_PORT             - API server port, default 8642
+ *   HERMES_API_HOST             - API server bind, default 0.0.0.0
+ *   HERMIEOS_MCP_MODE           - 'host' (default) or 'docker'
+ *   HERMES_MCP_CONTAINER_NAME   - container name when in 'docker' mode,
+ *                                 default 'hermieos-mcp'
+ *   HERMES_MCP_URL              - override the URL written into config
+ *   HERMES_MCP_PORT             - MCP port, default 3002
+ *   HERMES_MCP_TOKEN            - override the per-user token (skip DB)
+ *   HERMES_API_KEY              - override the API server bearer
  */
 import { randomBytes } from 'node:crypto';
 import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { createDatabase, closeDatabase, schema } from '@hermieos/db';
+import YAML from 'yaml';
 
 if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:5432/hermieos';
@@ -41,104 +65,82 @@ if (!process.env.HERMES_USER_EMAIL) {
   process.exit(1);
 }
 
-const PROFILE = process.env.HERMES_PROFILE_NAME ?? 'default';
+const PROFILE = process.env.HERMES_PROFILE_NAME;
 const HOME = process.env.HERMES_HOME ?? '/opt/hermes';
-const PROFILE_DIR = join(HOME, 'profiles', PROFILE);
+// When a profile name is set, write under profiles/<name>/. Otherwise
+// write to the main HERMES_HOME — the gateway reads this by default.
+const PROFILE_DIR = PROFILE ? join(HOME, 'profiles', PROFILE) : HOME;
 const ENV_FILE = join(PROFILE_DIR, '.env');
 const CONFIG_FILE = join(PROFILE_DIR, 'config.yaml');
 
 const db = createDatabase({ url: process.env.DATABASE_URL });
 
-/**
- * Minimal YAML reader. Hermes's config.yaml uses a small subset:
- * top-level scalar keys, nested mappings (1 level), and lists of
- * scalars. We do a line-based parse to extract the existing keys
- * before writing the merged file.
- */
-function readConfigKeys(path: string): {
-  topLevel: string[];
-  hasModel: boolean;
-  hasGuardrails: boolean;
-  mcpServerNames: string[];
-} {
-  const out = { topLevel: [] as string[], hasModel: false, hasGuardrails: false, mcpServerNames: [] as string[] };
-  if (!existsSync(path)) return out;
-  const lines = readFileSync(path, 'utf8').split('\n');
-  let inMcp = false;
-  let inModel = false;
-  let inGuardrails = false;
-  for (const line of lines) {
-    if (line.trim() === '' || line.trim().startsWith('#')) continue;
-    const indent = line.match(/^(\s*)/)?.[1].length ?? 0;
-    if (indent === 0) {
-      const m = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*):/);
-      if (m) {
-        const key = m[1]!;
-        out.topLevel.push(key);
-        inMcp = key === 'mcp_servers';
-        inModel = key === 'model';
-        inGuardrails = key === 'tool_loop_guardrails';
-        if (key === 'model') out.hasModel = true;
-        if (key === 'tool_loop_guardrails') out.hasGuardrails = true;
-      }
-    } else if (indent === 2 && inMcp) {
-      const m = line.match(/^\s{2}([a-zA-Z_][a-zA-Z0-9_-]*):/);
-      if (m) out.mcpServerNames.push(m[1]!);
-    }
-  }
-  return out;
+type HermesConfig = Record<string, unknown>;
+
+function readConfig(path: string): HermesConfig {
+  if (!existsSync(path)) return {};
+  const raw = readFileSync(path, 'utf8');
+  return YAML.parse(raw) as HermesConfig;
 }
 
-function buildMergedYaml(input: {
+function buildHermieosMcpBlock(mcpUrl: string, mcpToken: string): Record<string, unknown> {
+  return {
+    url: mcpUrl,
+    headers: { Authorization: `Bearer ${mcpToken}` },
+    enabled: true,
+    tools: { resources: false, prompts: false },
+  };
+}
+
+function buildMergedConfig(input: {
   mcpUrl: string;
   mcpToken: string;
-  existing: { topLevel: string[]; hasModel: boolean; hasGuardrails: boolean; mcpServerNames: string[] };
+  existing: HermesConfig;
   model: string;
   inferenceProvider: string;
   inferenceBaseUrl: string | undefined;
-}): string {
-  const lines: string[] = [];
-  // Header
-  lines.push('# Generated by hermieos/scripts/hermes-profile-gen.ts');
-  lines.push('# The mcp_servers.hermieos block is owned by HermieOS; other');
-  lines.push('# keys are preserved. Re-run after a token rotation to refresh.');
-  lines.push('');
+  skillsExternalDirs?: string[];
+}): HermesConfig {
+  const merged: HermesConfig = { ...input.existing };
 
   // model — only write if not present
-  if (!input.existing.hasModel) {
-    lines.push('model:');
-    lines.push(`  default: ${input.model}`);
-    lines.push(`  provider: ${input.inferenceProvider}`);
-    if (input.inferenceBaseUrl) lines.push(`  base_url: ${input.inferenceBaseUrl}`);
-    lines.push('');
+  if (!merged.model) {
+    merged.model = {
+      default: input.model,
+      provider: input.inferenceProvider,
+      ...(input.inferenceBaseUrl ? { base_url: input.inferenceBaseUrl } : {}),
+    };
   }
 
-  // mcp_servers — open the block; we'll append our server and any
-  // other servers the user already had (we don't enumerate them
-  // here — we only know the names, not their bodies, so we trust
-  // the existing file's body for non-hermieos servers).
-  lines.push('mcp_servers:');
-  lines.push('  hermieos:');
-  lines.push(`    url: ${input.mcpUrl}`);
-  lines.push('    headers:');
-  lines.push(`      Authorization: "Bearer ${input.mcpToken}"`);
-  lines.push('    enabled: true');
-  lines.push('    tools:');
-  lines.push('      resources: false');
-  lines.push('      prompts: false');
-  lines.push('');
+  // mcp_servers.hermieos — owned by HermieOS; overwrite just this entry
+  const mcpServers = (merged.mcp_servers as Record<string, unknown> | undefined) ?? {};
+  merged.mcp_servers = {
+    ...mcpServers,
+    hermieos: buildHermieosMcpBlock(input.mcpUrl, input.mcpToken),
+  };
 
   // tool_loop_guardrails — only if not present
-  if (!input.existing.hasGuardrails) {
-    lines.push('tool_loop_guardrails:');
-    lines.push('  hard_stop_enabled: true');
-    lines.push('  hard_stop_after:');
-    lines.push('    exact_failure: 5');
-    lines.push('    idempotent_no_progress: 5');
-    lines.push('');
+  if (!merged.tool_loop_guardrails) {
+    merged.tool_loop_guardrails = {
+      hard_stop_enabled: true,
+      hard_stop_after: { exact_failure: 5, idempotent_no_progress: 5 },
+    };
   }
 
-  return lines.join('\n');
+  // skills.external_dirs — add HermieOS skills repo dir if provided
+  if (input.skillsExternalDirs && input.skillsExternalDirs.length > 0) {
+    const skills = (merged.skills as Record<string, unknown> | undefined) ?? {};
+    const existingDirs = Array.isArray(skills.external_dirs) ? [...skills.external_dirs] : [];
+    const newDirs = input.skillsExternalDirs.filter((d) => !existingDirs.includes(d));
+    if (newDirs.length > 0) {
+      merged.skills = {
+        ...skills,
+        external_dirs: [...existingDirs, ...newDirs],
+      };
+    }
+  }
+
+  return merged;
 }
 
 function readOrGenerateApiKey(): string {
@@ -152,14 +154,15 @@ function readOrGenerateApiKey(): string {
 }
 
 function buildEnv(input: { apiKey: string; apiHost: string; apiPort: string }): string {
+  const profileTag = PROFILE ?? 'main';
   return [
     '# Generated by hermieos/scripts/hermes-profile-gen.ts',
-    `# API server settings for the '${PROFILE}' profile`,
+    `# API server settings for the '${profileTag}' config`,
     `API_SERVER_ENABLED=true`,
     `API_SERVER_HOST=${input.apiHost}`,
     `API_SERVER_PORT=${input.apiPort}`,
     `API_SERVER_KEY=${input.apiKey}`,
-    `API_SERVER_MODEL_NAME=${PROFILE}`,
+    `API_SERVER_MODEL_NAME=${profileTag}`,
     '',
   ].join('\n');
 }
@@ -187,34 +190,56 @@ async function main(): Promise<void> {
   mkdirSync(PROFILE_DIR, { recursive: true });
 
   const apiKey = readOrGenerateApiKey();
-  const apiHost = process.env.HERMES_API_HOST ?? '127.0.0.1';
+  const apiHost = process.env.HERMES_API_HOST ?? '0.0.0.0';
   const apiPort = process.env.HERMES_API_PORT ?? '8642';
-  const mcpUrl = process.env.HERMES_MCP_URL ?? 'http://127.0.0.1:3002/mcp';
   const model = process.env.HERMES_MODEL ?? 'hermes-agent';
   const inferenceProvider = process.env.HERMES_INFERENCE_PROVIDER ?? 'auto';
   const inferenceBaseUrl = process.env.HERMES_INFERENCE_BASE_URL;
+  const skillsExternalDirs = process.env.HERMES_SKILLS_EXTERNAL_DIRS
+    ? process.env.HERMES_SKILLS_EXTERNAL_DIRS.split(':').filter(Boolean)
+    : undefined;
+
+  // Derive the MCP URL from HERMIEOS_MCP_MODE.
+  //   'host'  -> http://host.docker.internal:<mcp_port>/mcp
+  //   'docker'-> http://<container_name>:<mcp_port>/mcp
+  // HERMES_MCP_URL wins as an explicit override.
+  const mcpPort = process.env.HERMES_MCP_PORT ?? '3002';
+  const mcpMode = (process.env.HERMIEOS_MCP_MODE ?? 'host').toLowerCase();
+  const defaultMcpUrl =
+    mcpMode === 'docker'
+      ? `http://${process.env.HERMES_MCP_CONTAINER_NAME ?? 'hermieos-mcp'}:${mcpPort}/mcp`
+      : `http://host.docker.internal:${mcpPort}/mcp`;
+  const mcpUrl = process.env.HERMES_MCP_URL ?? defaultMcpUrl;
 
   // Read existing config to know what to preserve
-  const existing = readConfigKeys(CONFIG_FILE);
+  const existing = readConfig(CONFIG_FILE);
 
   // Write config.yaml (merging with existing)
-  const yaml = buildMergedYaml({
+  const merged = buildMergedConfig({
     mcpUrl,
     mcpToken,
     existing,
     model,
     inferenceProvider,
     inferenceBaseUrl,
+    skillsExternalDirs,
   });
+  const yaml = [
+    '# Generated by hermieos/scripts/hermes-profile-gen.ts',
+    '# The mcp_servers.hermieos block is owned by HermieOS; other',
+    '# keys are preserved. Re-run after a token rotation to refresh.',
+    '',
+    YAML.stringify(merged, { indent: 2, lineWidth: 0 }),
+  ].join('\n');
   writeFileSync(CONFIG_FILE, yaml, { encoding: 'utf8', mode: 0o600 });
   // eslint-disable-next-line no-console
-  console.log(`wrote ${CONFIG_FILE} (merged with existing: top-level keys = [${existing.topLevel.join(', ')}])`);
+  console.log(`wrote ${CONFIG_FILE} (merged with existing keys = [${Object.keys(existing).join(', ')}], mcp_url=${mcpUrl})`);
 
   // Write .env
   const env = buildEnv({ apiKey, apiHost, apiPort });
   writeFileSync(ENV_FILE, env, { encoding: 'utf8', mode: 0o600 });
   // eslint-disable-next-line no-console
-  console.log(`wrote ${ENV_FILE} (api_key=${existing.topLevel.length > 0 ? 'reused-or-set' : 'GENERATED'})`);
+  console.log(`wrote ${ENV_FILE} (api_key=${Object.keys(existing).length > 0 ? 'reused-or-set' : 'GENERATED'})`);
 
   await closeDatabase(db);
 }

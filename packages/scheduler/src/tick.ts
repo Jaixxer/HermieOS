@@ -136,13 +136,16 @@ export interface DispatchEnvelope {
   trigger: 'cron' | 'user' | 'system';
 }
 
+const HERMIEOS_LOAD_HINT =
+  'This is a HermieOS dispatch envelope. Start by loading the `hermieos` skill with skill_view("hermieos") and follow its routing instructions. Then load the sub-skill it tells you to use.';
+
 function buildSubscriptionEnvelope(
   sub: DueSubscription,
   context: SubscriptionContext,
 ): DispatchEnvelope {
   return {
     event: 'subscription',
-    objective: `Review this subscription for meaningful changes.`,
+    objective: `Review this subscription for meaningful changes. ${HERMIEOS_LOAD_HINT}`,
     context,
     trigger: 'cron',
   };
@@ -154,7 +157,7 @@ function buildFeedbackReviewEnvelope(
 ): DispatchEnvelope {
   return {
     event: 'feedback_review',
-    objective: `Review the feedback accumulated since ${since.toISOString()} and update object priorities.`,
+    objective: `Review the feedback accumulated since ${since.toISOString()} and update object priorities. ${HERMIEOS_LOAD_HINT}`,
     context,
     trigger: 'cron',
   };
@@ -332,6 +335,8 @@ async function dispatchSubscriptionsForUser(
         // The agent sees the JSON envelope as the "input" and reads
         // the hermieos orchestrator skill to know what to do with it.
         input: JSON.stringify(envelope),
+        instructions:
+          'You are the HermieOS background worker. Load the `hermieos` skill with skill_view("hermieos") and follow its instructions exactly. Route the dispatch envelope to the sub-skill it specifies, and use only the mcp_hermieos_* tools to record state changes. Be terse.',
       });
       await markRunDispatched(runId, dispatched.hermesRunId, new Date());
 
@@ -433,6 +438,8 @@ async function dispatchFeedbackReviewIfPending(
       userId,
       kind: 'feedback_review',
       input: JSON.stringify(envelope),
+      instructions:
+        'You are the HermieOS background worker. Load the `hermieos` skill with skill_view("hermieos") and follow its instructions exactly. Route the dispatch envelope to the sub-skill it specifies, and use only the mcp_hermieos_* tools to record state changes. Be terse.',
     });
     await markRunDispatched(runId, dispatched.hermesRunId, new Date());
     // The run tracker settles this run. Feedback review doesn't have

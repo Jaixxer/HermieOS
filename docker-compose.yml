@@ -21,8 +21,10 @@ services:
       POSTGRES_USER: hermieos
       POSTGRES_PASSWORD: hermieos
       POSTGRES_DB: hermieos
+    # 15432 on the host to avoid clashing with a host-local Postgres
+    # that's typically on 127.0.0.1:5432.
     ports:
-      - "5432:5432"
+      - "15432:5432"
     volumes:
       - hermieos-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -123,16 +125,30 @@ services:
     environment:
       DATABASE_URL: postgres://hermieos:hermieos@postgres:5432/hermieos
       HERMES_USER_EMAIL: ${HERMES_USER_EMAIL:-}
-      HERMES_PROFILE_NAME: ${HERMES_PROFILE_NAME:-default}
-      HERMES_HOME: /opt/hermes
+      HERMES_PROFILE_NAME: ${HERMES_PROFILE_NAME:-}
+      # Hermes's data dir. The official image mounts it at /opt/data and
+      # keeps /opt/hermes reserved for the runtime (venv, bin, etc.).
+      HERMES_HOME: /opt/data
       HERMES_API_PORT: ${HERMES_API_PORT:-8642}
       HERMES_API_HOST: ${HERMES_API_HOST:-0.0.0.0}
+      # When unset, hermes-profile-gen writes a fresh key. When set
+      # (e.g. via .env), it uses this value and reuses the existing
+      # .env's API_SERVER_KEY if present.
+      HERMES_API_KEY: ${HERMES_API_KEY:-}
       HERMES_MCP_URL: ${HERMES_MCP_URL:-http://mcp:3002/mcp}
       HERMES_MODEL: ${HERMES_MODEL:-hermes-agent}
       HERMES_INFERENCE_PROVIDER: ${HERMES_INFERENCE_PROVIDER:-auto}
       HERMES_INFERENCE_BASE_URL: ${HERMES_INFERENCE_BASE_URL:-}
+      # When unset, hermes-profile-gen writes the main $HERMES_HOME/config.yaml
+      # (not profiles/<name>/config.yaml). The gateway reads the main config
+      # by default; explicit HERMES_PROFILE_NAME switches to a profile.
     volumes:
-      - hermes-data:/opt/hermes
+      # Named volume (managed by Docker) instead of a bind mount, so the
+      # container's UID 10000 owns the files without host-side chown.
+      # Pre-populate with `docker run --rm -v hermes-data:/opt/data
+      # -v /path/to/host/hermes-data:/seed alpine cp -a /seed/. /opt/data/`
+      # to copy the existing config in.
+      - hermes-data:/opt/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -145,13 +161,15 @@ services:
     restart: unless-stopped
     command: ["gateway", "run"]
     environment:
-      # When Hermes reads the profile, it gets these from profiles/<name>/.env
-      # (set by hermes-init). We do NOT pass them here on purpose: the docs
-      # warn that a container-wide API_SERVER_KEY would collide between
-      # profiles. Each profile owns its own .env.
+      HERMES_HOME: /opt/data
       HERMES_DASHBOARD: ${HERMES_DASHBOARD:-1}
+      # The cached credential in auth.json was originally sourced from
+      # the OPENCODE_GO_API_KEY env var. Without it, the credential is
+      # considered stale. Override here to keep the cached model working.
+      # (For production, rotate to a fresh API key and `hermes auth add`.)
+      OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-REDACTED_OPENAI_API_KEY}
     volumes:
-      - hermes-data:/opt/hermes
+      - hermes-data:/opt/data
     ports:
       - "${HERMES_API_PORT:-8642}:8642"
       - "9119:9119"
@@ -168,3 +186,9 @@ services:
 volumes:
   hermieos-pgdata:
   hermes-data:
+    # Pre-populated by the user before `docker compose up`. To reseed
+    # from an existing host dir, run:
+    #   docker run --rm -v hermieos_hermes-data:/opt/data \
+    #     -v /path/to/host/hermes-data:/seed alpine \
+    #     sh -c "cp -a /seed/. /opt/data/ && chown -R 10000:10000 /opt/data"
+    name: hermieos_hermes-data

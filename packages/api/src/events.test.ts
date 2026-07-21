@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import http from 'node:http';
 import { sql } from 'drizzle-orm';
 import { buildApp } from './server.js';
 import { setDb } from './data/auth.js';
@@ -109,19 +110,38 @@ describe('GET /events (SSE)', () => {
   });
 
   it('opens an SSE stream for an authenticated user', async () => {
-    // The inject()-based stream is buffered by the test runner, so we
-    // can't read events back. We just confirm the route is wired and
-    // returns 200 for an authenticated user. The cross-user test below
-    // verifies that the bus does not leak across users, and we trust
-    // openEventStream's direct tests for the streaming logic.
-    const res = await app.inject({
-      method: 'GET',
-      url: '/events',
-      headers: { accept: 'text/event-stream', cookie: aliceCookie },
-    });
-    expect(res.statusCode).toBe(200);
-    // The status 200 is enough; headers and body framing are exercised
-    // by the plugin itself.
+    // The stream is intentionally long-lived, so `app.inject()` would
+    // wait forever. Use a real HTTP request, verify SSE headers and the
+    // initial `connected` event, then close the socket.
+    const address = await app.listen({ port: 0, host: '127.0.0.1' });
+    try {
+      const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        const req = http.get(
+          `${address}/events`,
+          { headers: { accept: 'text/event-stream', cookie: aliceCookie } },
+          (res) => resolve(res),
+        );
+        req.on('error', reject);
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/event-stream');
+
+      let body = '';
+      response.on('data', (chunk: Buffer) => {
+        body += chunk.toString('utf8');
+      });
+
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
+      response.destroy();
+
+      expect(body).toContain('event: connected');
+      expect(body).toContain('data: "{}"');
+    } finally {
+      await app.close();
+      // rebuild and re-listen for subsequent tests that call app.inject()
+      app = await buildApp();
+    }
   });
 
   it('does not deliver bob\'s events to alice', async () => {

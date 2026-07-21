@@ -380,9 +380,11 @@ type ReserveSql = {
 export class SchedulerLock {
   private released = false;
   private readonly conn: ReserveSql;
+  private readonly parentEnd: (opts?: { timeout?: number }) => Promise<void>;
 
-  private constructor(conn: ReserveSql) {
+  private constructor(conn: ReserveSql, parentEnd: (opts?: { timeout?: number }) => Promise<void>) {
     this.conn = conn;
+    this.parentEnd = parentEnd;
   }
 
   static async acquire(): Promise<SchedulerLock | null> {
@@ -399,7 +401,7 @@ export class SchedulerLock {
       const rows = (await reserved`select pg_try_advisory_lock(${SCHEDULER_LOCK_KEY}) as ok`) as unknown[];
       const row = Array.isArray(rows) ? rows[0] : null;
       if (row && (row as { ok?: boolean }).ok === true) {
-        return new SchedulerLock(reserved);
+        return new SchedulerLock(reserved, () => sql.end({ timeout: 1 }));
       }
       // Did not get the lock. Release the reserved connection and
       // close the client.
@@ -439,6 +441,11 @@ export class SchedulerLock {
     } finally {
       try {
         this.conn.release();
+      } catch {
+        // ignore
+      }
+      try {
+        await this.parentEnd();
       } catch {
         // ignore
       }

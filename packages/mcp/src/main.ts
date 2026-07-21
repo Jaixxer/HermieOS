@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { serve } from '@hono/node-server';
 import { buildMcpApp } from './server.js';
 import { ToolRegistry } from './registry.js';
 import { createLogger } from './logger.js';
@@ -18,9 +18,9 @@ registerRunsTool(registry);
 
 const app = buildMcpApp(registry);
 
-log.info({ port, tools: registry.list().map((t) => t.name) }, 'mcp listening');
-
-export default {
-  port,
-  fetch: app.fetch,
-};
+serve(
+  { fetch: app.fetch, port },
+  (info) => {
+    log.info({ port: info.port, tools: registry.list().map((t) => t.name) }, 'mcp listening');
+  },
+);

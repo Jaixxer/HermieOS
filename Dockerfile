@@ -20,14 +20,19 @@ RUN pnpm install --frozen-lockfile
 FROM base AS build
 COPY --from=deps /app /app
 COPY . .
-RUN pnpm -r --filter=@hermieos/api --filter=@hermieos/mcp --filter=@hermieos/scheduler build
+RUN pnpm -r --filter=@hermieos/domain --filter=@hermieos/db --filter=@hermieos/api --filter=@hermieos/mcp --filter=@hermieos/scheduler build
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/.cache \
+    COREPACK_CACHE_FOLDER=/tmp/.cache/node/corepack
 RUN corepack enable && corepack prepare pnpm@11.3.0 --activate
 COPY --from=build /app/package.json /app/pnpm-workspace.yaml /app/pnpm-lock.yaml* ./
 COPY --from=build /app/packages packages
 COPY --from=build /app/node_modules node_modules
 EXPOSE 3001 3002
-CMD ["sh", "-c", "node packages/${SERVICE}/dist/main.js"]
+# Use the package's local tsx (each service has it under its own
+# node_modules). The dev loop also uses tsx, so the runtime matches.
+CMD ["sh", "-c", "packages/${SERVICE}/node_modules/.bin/tsx packages/${SERVICE}/src/main.ts"]
