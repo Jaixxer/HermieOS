@@ -206,6 +206,15 @@ export const api = {
   runs(limit = 20): Promise<{ runs: Array<{ id: string; kind: string; status: string; createdAt: string }> }> {
     return request(`/runs?limit=${limit}`);
   },
+  pushVapidKey(): Promise<{ publicKey: string }> {
+    return request('/me/push-vapid-key');
+  },
+  savePushSubscription(body: { endpoint: string; keys: { auth: string; p256dh: string }; userAgent?: string }): Promise<{ ok: true }> {
+    return request('/me/push-subscription', { method: 'POST', body: JSON.stringify(body) });
+  },
+  removePushSubscription(body: { endpoint: string }): Promise<{ ok: true }> {
+    return request('/me/push-subscription', { method: 'DELETE', body: JSON.stringify(body) });
+  },
 };
 
 export function sseUrl(): string {

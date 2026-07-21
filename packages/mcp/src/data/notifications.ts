@@ -3,6 +3,7 @@ import { schema } from '@hermieos/db';
 import { NOTIFY_USER_DAILY_LIMIT } from '@hermieos/domain';
 import { getDb } from './db.js';
 import { getObject } from './objects.js';
+import { sendPushNotifications } from './push.js';
 
 export interface NotificationRow {
   id: string;
@@ -100,6 +101,16 @@ export async function notifyUser(
     title: input.title,
     body: input.message,
     payload: { priority: input.priority, source: input.source, notificationId: created.id },
+  });
+
+  // Fire-and-forget push delivery — don't block the response on push
+  sendPushNotifications(userId, {
+    title: input.title,
+    body: input.message,
+    url: `/objects/${input.objectId ?? ''}`,
+    tag: `notify-${created.id}`,
+  }).catch(() => {
+    // Push delivery failures are non-fatal
   });
 
   return rowToNotification(created);

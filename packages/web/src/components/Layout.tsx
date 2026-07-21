@@ -4,6 +4,7 @@ import { useAuth } from '../auth';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { useSse } from '../sse';
+import { PwaBanner } from '../pwa';
 
 export function Layout(): React.JSX.Element {
   const { user, logout } = useAuth();
@@ -61,6 +62,7 @@ export function Layout(): React.JSX.Element {
           </div>
         ) : null}
       </header>
+      <PwaBanner />
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-6">
         <Outlet />
       </main>

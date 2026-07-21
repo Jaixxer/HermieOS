@@ -60,6 +60,9 @@ services:
       COOKIE_SECRET: ${COOKIE_SECRET:-dev-only-cookie-secret-change-me}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       NODE_ENV: production
+      PUSH_VAPID_PUBLIC: ${PUSH_VAPID_PUBLIC:-}
+      PUSH_VAPID_PRIVATE: ${PUSH_VAPID_PRIVATE:-}
+      PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-mailto:admin@hermieos.local}
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,6 +81,9 @@ services:
       DATABASE_URL: postgres://hermieos:hermieos@postgres:5432/hermieos
       LOG_LEVEL: ${LOG_LEVEL:-info}
       NODE_ENV: production
+      PUSH_VAPID_PUBLIC: ${PUSH_VAPID_PUBLIC:-}
+      PUSH_VAPID_PRIVATE: ${PUSH_VAPID_PRIVATE:-}
+      PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-mailto:admin@hermieos.local}
     depends_on:
       postgres:
         condition: service_healthy

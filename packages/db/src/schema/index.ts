@@ -348,6 +348,27 @@ export const notifications = pgTable(
   ],
 );
 
+// --- push_subscriptions ---
+
+export const pushSubscriptions = pgTable(
+  'push_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull(),
+    authKey: text('auth_key').notNull(),
+    p256dhKey: text('p256dh_key').notNull(),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('push_subscriptions_endpoint_unique').on(t.endpoint),
+    index('push_subscriptions_user_idx').on(t.userId),
+  ],
+);
+
 // --- feedback ---
 
 export const feedback = pgTable(
@@ -409,6 +430,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   feedback: many(feedback),
   hermesRuns: many(hermesRuns),
   notifications: many(notifications),
+  pushSubscriptions: many(pushSubscriptions),
 }));
 
 export const objectsRelations = relations(objects, ({ one, many }) => ({
@@ -439,4 +461,6 @@ export type Notification = typeof notifications.$inferSelect;
 export type Feedback = typeof feedback.$inferSelect;
 export type HermesRun = typeof hermesRuns.$inferSelect;
 export type NewHermesRun = typeof hermesRuns.$inferInsert;
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
