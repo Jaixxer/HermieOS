@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import cookie from '@fastify/cookie';
 import * as ssePluginModule from '@fastify/sse';
+import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { loggerOptions } from './logger.js';
 import { buildContext } from './context.js';
@@ -16,6 +20,10 @@ import { registerEventsRoutes } from './routes/events.js';
 import { ApiError, sendError } from './errors.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  const webDist = resolve(__dirname, '..', '..', 'web', 'dist');
+
   const app = Fastify({
     logger: loggerOptions(),
     genReqId: (req) => req.headers['x-request-id']?.toString() ?? randomUUID(),
@@ -62,8 +70,12 @@ export async function buildApp(): Promise<FastifyInstance> {
     });
   });
 
-  // 404 handler — same shape, so clients always have a requestId to quote.
+  // 404 handler — if we're serving the web client, return index.html
+  // for SPA client-side routing; otherwise return a structured JSON error.
   app.setNotFoundHandler((req, reply) => {
+    if (existsSync(webDist)) {
+      return reply.sendFile('index.html');
+    }
     reply.code(404);
     return reply.send({
       error: 'not_found',
@@ -82,6 +94,14 @@ export async function buildApp(): Promise<FastifyInstance> {
   await registerSubscriptionRoutes(app);
   await registerRunRoutes(app);
   await registerEventsRoutes(app);
+
+  // Serve the web client (PWA) from the built dist/ directory.
+  if (existsSync(webDist)) {
+    await app.register(fastifyStatic, {
+      root: webDist,
+      prefix: '/',
+    });
+  }
 
   return app;
 }

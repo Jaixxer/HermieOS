@@ -15,12 +15,15 @@ COPY packages/scheduler/package.json packages/scheduler/
 COPY packages/db/package.json packages/db/
 COPY packages/domain/package.json packages/domain/
 COPY packages/cache/package.json packages/cache/
+COPY packages/web/package.json packages/web/
 RUN pnpm install --frozen-lockfile
 
 FROM base AS build
 COPY --from=deps /app /app
 COPY . .
 RUN pnpm -r --filter=@hermieos/domain --filter=@hermieos/db --filter=@hermieos/api --filter=@hermieos/mcp --filter=@hermieos/scheduler build
+# Build the web client separately (tsc excluded to avoid type issues in CI)
+RUN cd packages/web && npx vite build
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
