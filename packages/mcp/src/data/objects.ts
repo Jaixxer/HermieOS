@@ -385,7 +385,7 @@ export async function listObjects(
     .select()
     .from(schema.objects)
     .where(and(...conditions))
-    .orderBy(desc(schema.objects.updatedAt))
+    .orderBy(desc(schema.objects.priority), desc(schema.objects.updatedAt))
     .limit(input.limit + 1);
 
   const sliced = rows.slice(0, input.limit);
