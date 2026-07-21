@@ -349,9 +349,66 @@ describe('tickOnce — feedback review', () => {
     expect(reviewCall?.sessionKey).toBe(`hermieos:user-${u.id}`);
   });
 
-  it('does not dispatch a feedback_review when no feedback is pending', async () => {
+  it('feedback_review envelope carries a stats block (counts per kind + suggest notes)', async () => {
     const u = await seedUser('alice');
+    // Two discoveries (liked, ignored) and one project (liked), with a
+    // suggest that has a note.
+    const discovery1 = await db
+      .insert(schema.objects)
+      .values({ userId: u.id, type: 'discovery', title: 'd1', body: {}, createdBy: 'user' })
+      .returning({ id: schema.objects.id });
+    const discovery2 = await db
+      .insert(schema.objects)
+      .values({ userId: u.id, type: 'discovery', title: 'd2', body: {}, createdBy: 'user' })
+      .returning({ id: schema.objects.id });
+    const project = await db
+      .insert(schema.objects)
+      .values({ userId: u.id, type: 'project', title: 'p1', body: {}, createdBy: 'user' })
+      .returning({ id: schema.objects.id });
+
+    await db.insert(schema.feedback).values({ userId: u.id, objectId: discovery1[0]!.id, kind: 'like' });
+    await db.insert(schema.feedback).values({ userId: u.id, objectId: discovery2[0]!.id, kind: 'ignore' });
+    await db.insert(schema.feedback).values({ userId: u.id, objectId: project[0]!.id, kind: 'like' });
+    await db.insert(schema.feedback).values({
+      userId: u.id,
+      objectId: discovery1[0]!.id,
+      kind: 'suggest',
+      payload: { note: 'I would have liked this with a board pinout' },
+    });
+
     const summary = await tickOnce(client);
+    expect(summary.feedbackReviewsDispatched).toBe(1);
+
+    const reviewCall = hermes.recorded.find((r) => {
+      try {
+        const e = JSON.parse(r.input);
+        return e.event === 'feedback_review' && e.context?.stats;
+      } catch {
+        return false;
+      }
+    });
+    expect(reviewCall).toBeDefined();
+    const ctx = JSON.parse(reviewCall!.input).context as {
+      stats: {
+        total: number;
+        by_kind: Record<string, number>;
+        liked_or_saved_by_type: Record<string, number>;
+        suggest_notes: Array<{ note: string }>;
+      };
+    };
+    expect(ctx.stats.total).toBe(4);
+    expect(ctx.stats.by_kind.like).toBe(2);
+    expect(ctx.stats.by_kind.ignore).toBe(1);
+    expect(ctx.stats.by_kind.suggest).toBe(1);
+    // The liked/saved breakdown should NOT count `ignore` or `suggest`.
+    expect(ctx.stats.liked_or_saved_by_type).toEqual({ discovery: 1, project: 1 });
+    // The suggest note text must reach Hermes verbatim.
+    expect(ctx.stats.suggest_notes).toHaveLength(1);
+    expect(ctx.stats.suggest_notes[0]?.note).toContain('board pinout');
+  });
+
+  it('does not dispatch a feedback_review when no feedback is pending', async () => {
+    const u = await seedUser('alice');    const summary = await tickOnce(client);
     expect(summary.feedbackReviewsDispatched).toBe(0);
   });
 });

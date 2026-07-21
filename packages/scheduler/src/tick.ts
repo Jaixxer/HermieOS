@@ -113,6 +113,21 @@ export interface SubscriptionContext {
 
 export interface FeedbackReviewContext {
   since: string;
+  /**
+   * A small summary header for the LLM: per-kind counts and the
+   * dominant object type. The raw rows below carry the detail
+   * (notes, full object). The stats are a quick-read for
+   * reasoning — e.g. "lots of ignores on discoveries" — without
+   * having to scan 200 rows first.
+   */
+  stats: {
+    total: number;
+    by_kind: Record<'like' | 'save' | 'ignore' | 'archive' | 'suggest', number>;
+    /** Object-type breakdown for the rows that were liked or saved. */
+    liked_or_saved_by_type: Record<string, number>;
+    /** Per-suggest note (the user's free-form text), if any. */
+    suggest_notes: Array<{ object_id: string; object_title: string; note: string }>;
+  };
   feedback_rows: Array<{
     id: string;
     kind: 'like' | 'save' | 'ignore' | 'archive' | 'suggest';
@@ -149,6 +164,50 @@ function buildSubscriptionEnvelope(
     context,
     trigger: 'cron',
   };
+}
+
+type FeedbackKind = 'like' | 'save' | 'ignore' | 'archive' | 'suggest';
+
+/**
+ * Summarize a list of feedback rows for the LLM. We include only
+ * things that survive aggregation: counts per kind, the types of
+ * objects the user has been liking/saving, and the qualitative
+ * `suggest` notes (which carry the user's actual free-form text).
+ *
+ * The raw rows in `feedback_rows` are also shipped. The agent reads
+ * the stats header for trends, the rows for per-item reasoning.
+ */
+function aggregateFeedbackStats(
+  rows: Awaited<ReturnType<typeof findRecentFeedback>>,
+): FeedbackReviewContext['stats'] {
+  const by_kind: Record<FeedbackKind, number> = {
+    like: 0,
+    save: 0,
+    ignore: 0,
+    archive: 0,
+    suggest: 0,
+  };
+  const liked_or_saved_by_type: Record<string, number> = {};
+  const suggest_notes: Array<{ object_id: string; object_title: string; note: string }> = [];
+  for (const r of rows) {
+    by_kind[r.kind] = (by_kind[r.kind] ?? 0) + 1;
+    if (r.kind === 'like' || r.kind === 'save') {
+      const t = r.object.type;
+      liked_or_saved_by_type[t] = (liked_or_saved_by_type[t] ?? 0) + 1;
+    }
+    if (r.kind === 'suggest') {
+      const note =
+        typeof r.payload?.['note'] === 'string' ? r.payload['note'] : '';
+      if (note.trim().length > 0) {
+        suggest_notes.push({
+          object_id: r.object.id,
+          object_title: r.object.title,
+          note: note.trim(),
+        });
+      }
+    }
+  }
+  return { total: rows.length, by_kind, liked_or_saved_by_type, suggest_notes };
 }
 
 function buildFeedbackReviewEnvelope(
@@ -394,14 +453,18 @@ async function dispatchFeedbackReviewIfPending(
     .limit(1);
   if (inFlight.length > 0) return;
 
-  // Build the envelope. The feedback-review context is the raw
-  // feedback rows since the last review, joined with the full
-  // object rows. Counts throw away the kinds and notes; the agent
-  // needs the structured rows to update priorities meaningfully.
+  // Build the envelope. The feedback-review context has two layers:
+  //   - `stats` is a small summary header so the LLM can reason about
+  //     trends ("lots of ignores on discoveries", "3 ESP32 items
+  //     liked") without scanning 200 rows first.
+  //   - `feedback_rows` is the raw rows with notes (for `suggest`).
+  //     The agent must read these to honor qualitative signals.
   const feedbackRows = await findRecentFeedback(userId, since, 200);
   if (feedbackRows.length === 0) return;
+  const stats = aggregateFeedbackStats(feedbackRows);
   const context: FeedbackReviewContext = {
     since: since.toISOString(),
+    stats,
     feedback_rows: feedbackRows.map((f) => ({
       id: f.id,
       kind: f.kind,

@@ -15,7 +15,17 @@ priority shift and apply small, conservative updates.
 
 - `since` — the timestamp of the last feedback review (or epoch if
   none). All feedback rows are strictly newer than this.
-- `feedback_rows` — raw feedback rows, not aggregated. Each row has:
+- `stats` — a small summary header for the context. Use this to
+  spot trends without scanning 200 rows first. Specifically:
+  - `stats.total` — number of feedback rows in this window.
+  - `stats.by_kind` — per-kind counts. e.g. `{like: 12, ignore: 7, suggest: 2}`.
+  - `stats.liked_or_saved_by_type` — per-type breakdown of the rows
+    that were `like` or `save`. e.g. `{discovery: 8, project: 4}`. Use
+    this to see which Object types the user is engaging with.
+  - `stats.suggest_notes` — the user's free-form `suggest` notes
+    (if any). Always read these — they're the highest-signal
+    qualitative feedback.
+- `feedback_rows` — the raw rows, not aggregated. Each row has:
   - `kind`: `like` | `save` | `ignore` | `archive` | `suggest`
   - `object_id` and the full `object` row
   - `payload` — for `suggest`, the user's text note
@@ -39,12 +49,18 @@ The kinds mean different things:
   `status: 'archived'`. The object is no longer surfaced in default
   feed views.
 - `suggest` — the user wrote a note explaining what they want instead.
-  Read the note. If the note describes a research direction, find or
-  create the appropriate object. If it's a clarification of an existing
-  object, update it.
+  **Always read `payload.note`.** If the note describes a research
+  direction, find or create the appropriate object. If it's a
+  clarification of an existing object, update it. A `suggest` row
+  without a note is just metadata; skip it.
 
-Do not aggregate counts. The kinds and notes carry more signal than a
-histogram would.
+When `stats.liked_or_saved_by_type` shows a strong pattern
+(e.g. 8 of 10 liked rows are `discovery`), that's a real signal
+about what the user values. Use `mcp_hermieos_create_object` to
+record that pattern as a Project or a Note, so future runs see it.
+
+The kinds and notes carry more signal than a histogram would. The
+`stats` block is a fast-read summary; the rows are the detail.
 
 ## Apply small shifts
 
