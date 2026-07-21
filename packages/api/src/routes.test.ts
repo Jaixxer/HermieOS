@@ -221,12 +221,19 @@ describe('feed + objects + search', () => {
     expect(after.body.unread).toBe(0);
   });
 
-  it('GET /objects/:id returns the object with its current revision', async () => {
+  it('GET /objects/:id returns the object with its current revision and related objects', async () => {
     const r = await call('GET', `/objects/${objA.id}`, { cookie: aliceCookie });
     expect(r.status).toBe(200);
-    const obj = r.body.object as { id: string; title: string; revision: number };
+    const obj = r.body.object as { id: string; title: string; revision: number; related: unknown[] };
     expect(obj.id).toBe(objA.id);
     expect(obj.revision).toBe(1);
+    expect(Array.isArray(obj.related)).toBe(true);
+  });
+
+  it('GET /objects/:id returns empty related array when no relationships exist', async () => {
+    const r = await call('GET', `/objects/${objA.id}`, { cookie: aliceCookie });
+    const obj = r.body.object as { related: unknown[] };
+    expect(obj.related).toEqual([]);
   });
 
   it('GET /objects/:id returns 404 for another user', async () => {

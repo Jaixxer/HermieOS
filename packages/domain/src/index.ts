@@ -205,6 +205,22 @@ export const unlinkObjectsArgsSchema = z.object({
   source: z.string().min(1).max(500),
 });
 
+export const getRelatedObjectsArgsSchema = z.object({
+  objectId: z.string().uuid(),
+  kind: relationshipKindSchema.optional(),
+  minConfidence: z.number().min(0).max(1).optional(),
+  direction: z.enum(['inbound', 'outbound', 'both']).optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+});
+
+export const traverseGraphArgsSchema = z.object({
+  objectId: z.string().uuid(),
+  maxDepth: z.number().int().min(1).max(5).default(3),
+  kinds: z.array(relationshipKindSchema).max(5).optional(),
+  minConfidence: z.number().min(0).max(1).optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+});
+
 export const createSubscriptionArgsSchema = z.object({
   name: z.string().min(1).max(200),
   target: z.string().min(1).max(500),

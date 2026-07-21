@@ -10,6 +10,7 @@ import {
   archiveObject,
 } from '@hermieos/mcp/src/data/objects.js';
 import { getObjectTimeline } from '@hermieos/mcp/src/data/timeline.js';
+import { getRelatedObjectsSummary } from '@hermieos/mcp/src/data/relationships.js';
 import { BadRequest, NotFound, Unauthorized, sendError } from '../errors.js';
 
 const objectTypes = [
@@ -99,7 +100,8 @@ export async function registerObjectRoutes(app: FastifyInstance): Promise<void> 
     if (!obj) {
       return sendError(reply, new NotFound('object not found'), String(req.id));
     }
-    return { object: obj };
+    const related = await getRelatedObjectsSummary(req.user.id, id);
+    return { object: { ...obj, related } };
   });
 
   app.get('/objects/:id/timeline', async (req, reply) => {

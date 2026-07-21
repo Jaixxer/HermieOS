@@ -446,3 +446,321 @@ describe('get_object_timeline', () => {
     expect(kinds).toEqual(['archived', 'updated', 'created']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8: Graph — get_related_objects + traverse_graph
+// ---------------------------------------------------------------------------
+
+describe('get_related_objects', () => {
+  it('returns all related objects in both directions', async () => {
+    const a = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'research', title: 'Node A', source: 's',
+    });
+    const b = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'discovery', title: 'Node B', source: 's',
+    });
+    const c = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'note', title: 'Node C', source: 's',
+    });
+    // A → B (outbound)
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: a.parsed.object.id, toId: b.parsed.object.id,
+      kind: 'related_to', confidence: 0.8, reason: 'A relates to B', source: 'test',
+    });
+    // C → A (inbound from A's perspective)
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: c.parsed.object.id, toId: a.parsed.object.id,
+      kind: 'derived_from', confidence: 0.6, reason: 'C derives from A', source: 'test',
+    });
+
+    const rel = await callTool<Array<{ id: string; title: string; direction: string; kind: string }>>(
+      sessionA, userA.token, 'get_related_objects',
+      { objectId: a.parsed.object.id, limit: 20 },
+    );
+    expect(rel.parsed.length).toBe(2);
+    const titles = rel.parsed.map((r) => `${r.title}|${r.direction}|${r.kind}`).sort();
+    expect(titles).toEqual(['Node B|outbound|related_to', 'Node C|inbound|derived_from']);
+  });
+
+  it('filters by kind', async () => {
+    const a = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'research', title: 'A', source: 's',
+    });
+    const b = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'discovery', title: 'B', source: 's',
+    });
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: a.parsed.object.id, toId: b.parsed.object.id,
+      kind: 'related_to', confidence: 0.8, reason: 'related', source: 'test',
+    });
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: a.parsed.object.id, toId: b.parsed.object.id,
+      kind: 'cites', confidence: 0.5, reason: 'cites', source: 'test',
+    });
+
+    const rel = await callTool<Array<{ kind: string }>>(
+      sessionA, userA.token, 'get_related_objects',
+      { objectId: a.parsed.object.id, kind: 'cites', limit: 20 },
+    );
+    expect(rel.parsed.length).toBe(1);
+    expect(rel.parsed[0]?.kind).toBe('cites');
+  });
+
+  it('filters by minimum confidence', async () => {
+    const a = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'research', title: 'A', source: 's',
+    });
+    const b = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'discovery', title: 'B', source: 's',
+    });
+    const c = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'note', title: 'C', source: 's',
+    });
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: a.parsed.object.id, toId: b.parsed.object.id,
+      kind: 'related_to', confidence: 0.9, reason: 'strong', source: 'test',
+    });
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: a.parsed.object.id, toId: c.parsed.object.id,
+      kind: 'related_to', confidence: 0.2, reason: 'weak', source: 'test',
+    });
+
+    const rel = await callTool<Array<{ confidence: number }>>(
+      sessionA, userA.token, 'get_related_objects',
+      { objectId: a.parsed.object.id, minConfidence: 0.5, limit: 20 },
+    );
+    expect(rel.parsed.length).toBe(1);
+  });
+
+  it('filters by direction — inbound only', async () => {
+    const a = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'research', title: 'A', source: 's',
+    });
+    const b = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'discovery', title: 'B', source: 's',
+    });
+    // B → A (inbound from A's perspective)
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: b.parsed.object.id, toId: a.parsed.object.id,
+      kind: 'related_to', confidence: 0.8, reason: 'inbound', source: 'test',
+    });
+    // A → B (outbound)
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: a.parsed.object.id, toId: b.parsed.object.id,
+      kind: 'cites', confidence: 0.5, reason: 'outbound', source: 'test',
+    });
+
+    const rel = await callTool<Array<{ direction: string }>>(
+      sessionA, userA.token, 'get_related_objects',
+      { objectId: a.parsed.object.id, direction: 'inbound', limit: 20 },
+    );
+    expect(rel.parsed.length).toBe(1);
+    expect(rel.parsed[0]?.direction).toBe('inbound');
+  });
+
+  it('returns empty array for object with no relationships', async () => {
+    const a = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'research', title: 'lonely', source: 's',
+    });
+    const rel = await callTool<Array<unknown>>(
+      sessionA, userA.token, 'get_related_objects',
+      { objectId: a.parsed.object.id, limit: 20 },
+    );
+    expect(rel.parsed).toEqual([]);
+  });
+
+  it('respects limit', async () => {
+    const a = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'research', title: 'hub', source: 's',
+    });
+    for (let i = 0; i < 5; i++) {
+      const b = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+        type: 'discovery', title: `leaf-${i}`, source: 's',
+      });
+      await callTool(sessionA, userA.token, 'link_objects', {
+        fromId: a.parsed.object.id, toId: b.parsed.object.id,
+        kind: 'related_to', confidence: 0.8, reason: `link-${i}`, source: 'test',
+      });
+    }
+    const rel = await callTool<Array<unknown>>(
+      sessionA, userA.token, 'get_related_objects',
+      { objectId: a.parsed.object.id, limit: 3 },
+    );
+    expect(rel.parsed.length).toBe(3);
+  });
+});
+
+describe('traverse_graph', () => {
+  it('returns 1-hop neighbours at depth 1', async () => {
+    const a = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'research', title: 'Root', source: 's',
+    });
+    const b = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'discovery', title: 'Child 1', source: 's',
+    });
+    const c = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'note', title: 'Child 2', source: 's',
+    });
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: a.parsed.object.id, toId: b.parsed.object.id,
+      kind: 'related_to', confidence: 0.9, reason: 'edge 1', source: 'test',
+    });
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: a.parsed.object.id, toId: c.parsed.object.id,
+      kind: 'derived_from', confidence: 0.7, reason: 'edge 2', source: 'test',
+    });
+
+    const result = await callTool<{
+      startNode: { title: string };
+      nodes: Array<{ title: string; depth: number; path: Array<{ kind: string }> }>;
+      edgeCount: number;
+    }>(
+      sessionA, userA.token, 'traverse_graph',
+      { objectId: a.parsed.object.id, maxDepth: 1, limit: 50 },
+    );
+
+    expect(result.parsed.startNode.title).toBe('Root');
+    expect(result.parsed.nodes.length).toBe(2);
+    expect(result.parsed.edgeCount).toBe(2);
+    const titles = result.parsed.nodes.map((n) => n.title).sort();
+    expect(titles).toEqual(['Child 1', 'Child 2']);
+    for (const n of result.parsed.nodes) {
+      expect(n.depth).toBe(1);
+      expect(n.path.length).toBe(1);
+    }
+  });
+
+  it('returns multi-hop graph with correct depths', async () => {
+    // A → B → C → D  (chain of 3)
+    const a = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'research', title: 'A', source: 's',
+    });
+    const b = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'discovery', title: 'B', source: 's',
+    });
+    const c = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'note', title: 'C', source: 's',
+    });
+    const d = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'decision', title: 'D', source: 's',
+    });
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: a.parsed.object.id, toId: b.parsed.object.id,
+      kind: 'related_to', confidence: 1, reason: 'A→B', source: 'test',
+    });
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: b.parsed.object.id, toId: c.parsed.object.id,
+      kind: 'related_to', confidence: 1, reason: 'B→C', source: 'test',
+    });
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: c.parsed.object.id, toId: d.parsed.object.id,
+      kind: 'related_to', confidence: 1, reason: 'C→D', source: 'test',
+    });
+
+    const result = await callTool<{
+      nodes: Array<{ title: string; depth: number }>;
+      edgeCount: number;
+    }>(
+      sessionA, userA.token, 'traverse_graph',
+      { objectId: a.parsed.object.id, maxDepth: 3, limit: 50 },
+    );
+
+    expect(result.parsed.nodes.length).toBe(3);
+    expect(result.parsed.edgeCount).toBe(3);
+    const byDepth = new Map<number, string[]>();
+    for (const n of result.parsed.nodes) {
+      const arr = byDepth.get(n.depth) ?? [];
+      arr.push(n.title);
+      byDepth.set(n.depth, arr);
+    }
+    expect(byDepth.get(1)?.sort()).toEqual(['B']);
+    expect(byDepth.get(2)?.sort()).toEqual(['C']);
+    expect(byDepth.get(3)?.sort()).toEqual(['D']);
+  });
+
+  it('is cycle-safe: does not re-visit nodes', async () => {
+    // A → B, B → A (mutual relationship)
+    const a = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'research', title: 'Cycle A', source: 's',
+    });
+    const b = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'discovery', title: 'Cycle B', source: 's',
+    });
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: a.parsed.object.id, toId: b.parsed.object.id,
+      kind: 'related_to', confidence: 1, reason: 'A→B', source: 'test',
+    });
+    await callTool(sessionA, userA.token, 'link_objects', {
+      fromId: b.parsed.object.id, toId: a.parsed.object.id,
+      kind: 'related_to', confidence: 1, reason: 'B→A', source: 'test',
+    });
+
+    const result = await callTool<{ nodes: Array<{ title: string }>; edgeCount: number }>(
+      sessionA, userA.token, 'traverse_graph',
+      { objectId: a.parsed.object.id, maxDepth: 5, limit: 50 },
+    );
+
+    // Should only find B, not revisit A
+    expect(result.parsed.nodes.length).toBe(1);
+    expect(result.parsed.nodes[0]?.title).toBe('Cycle B');
+  });
+
+  it('respects maxDepth', async () => {
+    // Create A → B → C → D (3 edges)
+    const ids: string[] = [];
+    const titles = ['A0', 'A1', 'A2', 'A3'];
+    for (const t of titles) {
+      const r = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+        type: 'research', title: t, source: 's',
+      });
+      ids.push(r.parsed.object.id);
+    }
+    for (let i = 0; i < 3; i++) {
+      await callTool(sessionA, userA.token, 'link_objects', {
+        fromId: ids[i]!, toId: ids[i + 1]!,
+        kind: 'related_to', confidence: 1, reason: `chain`, source: 'test',
+      });
+    }
+
+    const result = await callTool<{ nodes: Array<{ depth: number }>; edgeCount: number }>(
+      sessionA, userA.token, 'traverse_graph',
+      { objectId: ids[0]!, maxDepth: 1, limit: 50 },
+    );
+
+    expect(result.parsed.nodes.length).toBe(1);
+    expect(result.parsed.edgeCount).toBe(1);
+  });
+
+  it('respects limit', async () => {
+    // Hub connected to 5 leaf nodes
+    const hub = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+      type: 'research', title: 'Hub', source: 's',
+    });
+    for (let i = 0; i < 5; i++) {
+      const leaf = await callTool<{ object: { id: string } }>(sessionA, userA.token, 'create_object', {
+        type: 'discovery', title: `Leaf ${i}`, source: 's',
+      });
+      await callTool(sessionA, userA.token, 'link_objects', {
+        fromId: hub.parsed.object.id, toId: leaf.parsed.object.id,
+        kind: 'related_to', confidence: 0.8, reason: `L${i}`, source: 'test',
+      });
+    }
+
+    const result = await callTool<{ nodes: unknown[] }>(
+      sessionA, userA.token, 'traverse_graph',
+      { objectId: hub.parsed.object.id, maxDepth: 1, limit: 3 },
+    );
+
+    expect(result.parsed.nodes.length).toBe(3);
+  });
+
+  it('throws when start object is not found', async () => {
+    const result = await callTool(sessionA, userA.token, 'traverse_graph', {
+      objectId: '00000000-0000-0000-0000-000000000000',
+      maxDepth: 1,
+      limit: 50,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain('not found');
+  });
+});

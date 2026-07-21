@@ -3,17 +3,19 @@ import {
   createSubscriptionArgsSchema,
   getObjectTimelineArgsSchema,
   getRecentActivityArgsSchema,
+  getRelatedObjectsArgsSchema,
   linkObjectsArgsSchema,
   listSubscriptionsArgsSchema,
   markFeedReadArgsSchema,
   recordFeedbackArgsSchema,
+  traverseGraphArgsSchema,
   unlinkObjectsArgsSchema,
   updateSubscriptionArgsSchema,
 } from '@hermieos/domain';
 import type { z } from 'zod';
 import { type AuthedContext } from '../auth.js';
 import { type ToolRegistry } from '../registry.js';
-import { linkObjects, unlinkObjects } from '../data/relationships.js';
+import { linkObjects, unlinkObjects, getRelatedObjects, traverseGraph } from '../data/relationships.js';
 import {
   archiveSubscription,
   createSubscription,
@@ -69,6 +71,38 @@ export function registerRelationshipAndSubscriptionTools(registry: ToolRegistry)
     schema: unlinkObjectsArgsSchema,
     handler: async (ctx, args) => {
       return unlinkObjects(ctx.userId, args.fromId, args.toId, args.kind);
+    },
+  });
+
+  tool(registry, {
+    name: 'get_related_objects',
+    description:
+      'Returns the objects directly connected to a given object. Considers both directions: outbound (this object links to) and inbound (linked to this object). Filters by kind, minimum confidence, and direction.',
+    schema: getRelatedObjectsArgsSchema,
+    handler: async (ctx, args) => {
+      return getRelatedObjects(ctx.userId, {
+        objectId: args.objectId,
+        kind: args.kind,
+        minConfidence: args.minConfidence,
+        direction: args.direction ?? 'both',
+        limit: args.limit,
+      });
+    },
+  });
+
+  tool(registry, {
+    name: 'traverse_graph',
+    description:
+      'Breadth-first exploration of the relationship graph starting from an object. Returns nodes at each depth with the full path of edges that connect them to the start node. Cycle-safe (visited set). Max depth is configurable (default 3).',
+    schema: traverseGraphArgsSchema,
+    handler: async (ctx, args) => {
+      return traverseGraph(ctx.userId, {
+        startObjectId: args.objectId,
+        maxDepth: args.maxDepth,
+        kinds: args.kinds,
+        minConfidence: args.minConfidence,
+        limit: args.limit,
+      });
     },
   });
 
