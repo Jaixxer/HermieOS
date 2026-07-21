@@ -60,6 +60,7 @@ export function registerObjectTools(registry: ToolRegistry): void {
         body: args.body,
         status: args.status,
         tags: args.tags,
+        priority: args.priority,
         source: args.source,
       });
       return { object: obj, revision: 1 };
@@ -79,6 +80,7 @@ export function registerObjectTools(registry: ToolRegistry): void {
         body: args.body,
         status: args.status,
         tags: args.tags,
+        priority: args.priority,
         reason: args.reason,
         appendNote: args.appendNote,
         source: args.source,

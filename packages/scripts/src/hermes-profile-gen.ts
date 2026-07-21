@@ -207,7 +207,7 @@ async function main(): Promise<void> {
   const mcpMode = (process.env.HERMIEOS_MCP_MODE ?? 'host').toLowerCase();
   const defaultMcpUrl =
     mcpMode === 'docker'
-      ? `http://${process.env.HERMES_MCP_CONTAINER_NAME ?? 'hermieos-mcp'}:${mcpPort}/mcp`
+      ? `http://${process.env.HERMES_MCP_CONTAINER_NAME ?? 'mcp'}:${mcpPort}/mcp`
       : `http://host.docker.internal:${mcpPort}/mcp`;
   const mcpUrl = process.env.HERMES_MCP_URL ?? defaultMcpUrl;
 

@@ -135,7 +135,8 @@ services:
       # (e.g. via .env), it uses this value and reuses the existing
       # .env's API_SERVER_KEY if present.
       HERMES_API_KEY: ${HERMES_API_KEY:-}
-      HERMES_MCP_URL: ${HERMES_MCP_URL:-http://mcp:3002/mcp}
+      HERMIEOS_MCP_MODE: ${HERMIEOS_MCP_MODE:-docker}
+      HERMES_MCP_URL: ${HERMES_MCP_URL:-}
       HERMES_MODEL: ${HERMES_MODEL:-hermes-agent}
       HERMES_INFERENCE_PROVIDER: ${HERMES_INFERENCE_PROVIDER:-auto}
       HERMES_INFERENCE_BASE_URL: ${HERMES_INFERENCE_BASE_URL:-}

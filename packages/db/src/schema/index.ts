@@ -91,6 +91,7 @@ export const feedEventKindEnum = pgEnum('feed_event_kind', [
   'object_created',
   'object_archived',
   'decision_resolved',
+  'priority_changed',
 ]);
 
 export const objectEventKindEnum = pgEnum('object_event_kind', [

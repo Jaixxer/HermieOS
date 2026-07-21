@@ -72,6 +72,7 @@ export interface CreateObjectInput {
   body?: Record<string, unknown>;
   status?: schema.ObjectRow['status'];
   tags?: string[];
+  priority?: number;
   source: string;
   hermesRunId?: string;
 }
@@ -96,6 +97,7 @@ export async function createObject(userId: string, input: CreateObjectInput): Pr
         body,
         status,
         tags,
+        priority: input.priority ?? 0,
         createdBy: actor,
       })
       .returning();
@@ -142,6 +144,7 @@ export interface UpdateObjectInput {
   body?: Record<string, unknown>;
   status?: schema.ObjectRow['status'];
   tags?: string[];
+  priority?: number;
   reason?: string;
   appendNote?: string;
   source: string;
@@ -188,6 +191,7 @@ export async function updateObject(
         : input.body ?? (current.body as Record<string, unknown>);
     const nextStatus = input.status ?? current.status;
     const nextTags = input.tags ?? current.tags;
+    const nextPriority = input.priority ?? current.priority;
 
     const contentChanged =
       nextTitle !== current.title ||
@@ -195,6 +199,8 @@ export async function updateObject(
       !deepEqual(nextBody, current.body) ||
       nextStatus !== current.status ||
       !deepEqual(nextTags, current.tags);
+
+    const priorityChanged = nextPriority !== current.priority;
 
     const [updated] = await tx
       .update(schema.objects)
@@ -204,6 +210,7 @@ export async function updateObject(
         body: nextBody,
         status: nextStatus,
         tags: nextTags,
+        priority: nextPriority,
         updatedAt: new Date(),
       })
       .where(eq(schema.objects.id, input.id))
@@ -256,6 +263,16 @@ export async function updateObject(
         kind: 'note_added',
         actor,
         payload: { text: input.appendNote, source: input.source },
+      });
+    }
+
+    if (priorityChanged) {
+      await tx.insert(schema.feedEvents).values({
+        userId,
+        kind: 'priority_changed',
+        objectId: input.id,
+        title: updated.title,
+        payload: { from: current.priority, to: nextPriority, source: input.source },
       });
     }
 

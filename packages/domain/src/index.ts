@@ -133,6 +133,7 @@ export const createObjectArgsSchema = z.object({
   body: z.record(z.unknown()).optional(),
   status: objectStatusSchema.optional(),
   tags: z.array(z.string().min(1).max(64)).max(32).optional(),
+  priority: z.coerce.number().int().optional(),
   source: z.string().min(1).max(500),
 });
 
@@ -144,6 +145,7 @@ export const updateObjectArgsSchema = z
     body: z.record(z.unknown()).optional(),
     status: objectStatusSchema.optional(),
     tags: z.array(z.string().min(1).max(64)).max(32).optional(),
+  priority: z.coerce.number().int().optional(),
     reason: z.string().max(500).optional(),
     appendNote: z.string().max(5000).optional(),
     source: z.string().min(1).max(500),
@@ -155,6 +157,7 @@ export const updateObjectArgsSchema = z
       v.body !== undefined ||
       v.status !== undefined ||
       v.tags !== undefined ||
+      v.priority !== undefined ||
       v.appendNote !== undefined,
     { message: 'At least one updatable field must be provided' },
   );
