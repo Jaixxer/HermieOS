@@ -1,10 +1,12 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useAuth } from './auth';
+import { useServer } from './server';
 import { Layout } from './components/Layout';
 import { DesktopShell } from './DesktopShell';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
+import { ConnectPage } from './pages/ConnectPage';
 import { FeedPage } from './pages/FeedPage';
 import { ObjectDetailPage } from './pages/ObjectDetailPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
@@ -24,6 +26,13 @@ function RequireAuth({ children }: { children: ReactNode }): React.JSX.Element {
 }
 
 export function App(): React.JSX.Element {
+  const { connected, url } = useServer();
+
+  // Connection gate — show connect page if no server configured
+  if (!connected && !url) {
+    return <ConnectPage />;
+  }
+
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />

@@ -16,6 +16,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import { useSse } from './sse';
 import { CommandPalette } from './CommandPalette';
+import { useServer } from './server';
 
 const NAV_ITEMS = [
   { to: '/', icon: '◉', label: 'Feed', shortcut: '1' },
@@ -125,6 +126,9 @@ export function DesktopShell(): React.JSX.Element {
 // ---------------------------------------------------------------------------
 
 function Titlebar(): React.JSX.Element {
+  const { url, connected, disconnect } = useServer();
+  const [showMenu, setShowMenu] = React.useState(false);
+
   return (
     <div
       className="h-9 flex items-center justify-between px-3 border-b border-[#ffffff06] bg-[#060618]/90"
@@ -132,7 +136,9 @@ function Titlebar(): React.JSX.Element {
       data-tauri-drag-region
     >
       <div className="flex items-center gap-2 select-none">
-        <span className="w-2 h-2 rounded-full bg-sky-500 shadow-[0_0_6px_#3b82f6]" />
+        <span
+          className={`w-2 h-2 rounded-full shadow-[0_0_6px_currentColor] ${connected ? 'bg-emerald-500 text-emerald-500' : 'bg-amber-500 text-amber-500'}`}
+        />
         <span className="text-[11px] font-mono tracking-widest text-slate-500">
           HERMIEOS
           <span className="ml-2 text-[10px] text-slate-700 font-normal tracking-normal">
@@ -140,10 +146,43 @@ function Titlebar(): React.JSX.Element {
           </span>
         </span>
       </div>
-      <div className="text-[10px] text-slate-600 font-mono">
-        <kbd className="px-1.5 py-0.5 rounded bg-[#ffffff08] border border-[#ffffff0a]">⌘</kbd>
-        <kbd className="ml-1 px-1.5 py-0.5 rounded bg-[#ffffff08] border border-[#ffffff0a]">K</kbd>
-        <span className="ml-2">Command Palette</span>
+
+      <div className="flex items-center gap-3">
+        {/* Server indicator */}
+        <div className="relative">
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors ${
+              connected
+                ? 'border-emerald-800/50 text-emerald-600 hover:text-emerald-400'
+                : 'border-amber-800/50 text-amber-600'
+            }`}
+          >
+            {connected ? '● Connected' : '○ Disconnected'}
+          </button>
+          {showMenu ? (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
+              <div className="absolute right-0 top-full mt-1 z-20 w-56 bg-[#0a0a1a] border border-[#ffffff10] rounded-lg shadow-xl overflow-hidden">
+                <div className="px-3 py-2 border-b border-[#ffffff06]">
+                  <div className="text-[10px] text-slate-600 font-mono uppercase tracking-wider">Server</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5 truncate font-mono">{url || 'Not configured'}</div>
+                </div>
+                <button
+                  onClick={() => { disconnect(); setShowMenu(false); }}
+                  className="w-full text-left px-3 py-2 text-[11px] text-red-400 hover:bg-red-950/30 transition-colors"
+                >
+                  Disconnect
+                </button>
+              </div>
+            </>
+          ) : null}
+        </div>
+
+        <div className="text-[10px] text-slate-600 font-mono">
+          <kbd className="px-1.5 py-0.5 rounded bg-[#ffffff08] border border-[#ffffff0a]">⌘</kbd>
+          <kbd className="ml-1 px-1.5 py-0.5 rounded bg-[#ffffff08] border border-[#ffffff0a]">K</kbd>
+        </div>
       </div>
     </div>
   );

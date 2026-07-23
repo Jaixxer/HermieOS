@@ -92,10 +92,17 @@ export class ApiError extends Error {
   }
 }
 
-const BASE = '/api';
+const DEFAULT_BASE = '/api';
+
+let _base = DEFAULT_BASE;
+
+/** Set the API base URL (called by ServerProvider on connect/disconnect). */
+export function setApiBase(url: string): void {
+  _base = url ? `${url.replace(/\/+$/, '')}/api` : DEFAULT_BASE;
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${_base}${path}`, {
     ...init,
     credentials: 'include',
     headers: {
@@ -231,5 +238,5 @@ export const api = {
 };
 
 export function sseUrl(): string {
-  return `${BASE}/events`;
+  return `${_base}/events`;
 }

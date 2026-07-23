@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import cookie from '@fastify/cookie';
 import * as ssePluginModule from '@fastify/sse';
 import fastifyStatic from '@fastify/static';
+import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { loggerOptions } from './logger.js';
 import { buildContext } from './context.js';
@@ -32,6 +33,12 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(cookie, {
     secret: process.env.COOKIE_SECRET ?? 'dev-only-cookie-secret-change-me',
+  });
+
+  // Allow cross-origin requests from desktop/mobile clients
+  await app.register(cors, {
+    origin: true,
+    credentials: true,
   });
   // The @fastify/sse 0.5.0 default export is wrapped in fastify-plugin,
   // which produces a value whose TypeScript signature doesn't structurally
