@@ -1,28 +1,44 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { findSessionByToken, touchSession, type SessionUser } from './data/auth.js';
+import { findSessionByToken, touchSession, findUserByMCPToken, type SessionUser } from './data/auth.js';
 
 export const SESSION_COOKIE_NAME = 'hermieos_session';
 
 declare module 'fastify' {
   interface FastifyRequest {
     user: SessionUser | null;
+    /** True when auth came from a bearer token (not session cookie) */
+    authViaToken: boolean;
   }
 }
 
 export async function getSessionUser(req: FastifyRequest): Promise<SessionUser | null> {
-  const token = req.cookies[SESSION_COOKIE_NAME];
-  if (!token) return null;
-  const found = await findSessionByToken(token);
-  if (!found) return null;
-  // Touch last_seen_at in the background; we don't need to wait.
-  void touchSession(token).catch(() => undefined);
-  return {
-    id: found.user.id,
-    email: found.user.email,
-    displayName: found.user.displayName,
-    mcpToken: found.user.mcpToken,
-    schedulerEnabled: found.user.schedulerEnabled,
-  };
+  // 1. Try session cookie first
+  const cookieToken = req.cookies[SESSION_COOKIE_NAME];
+  if (cookieToken) {
+    const found = await findSessionByToken(cookieToken);
+    if (found) {
+      void touchSession(cookieToken).catch(() => undefined);
+      return {
+        id: found.user.id,
+        email: found.user.email,
+        displayName: found.user.displayName,
+        mcpToken: found.user.mcpToken,
+        schedulerEnabled: found.user.schedulerEnabled,
+      };
+    }
+  }
+
+  // 2. Fall back to bearer token (MCP token) for desktop/mobile clients
+  const authHeader = req.headers.authorization;
+  if (authHeader) {
+    const match = /^Bearer\s+(.+)$/i.exec(authHeader);
+    if (match?.[1]) {
+      const user = await findUserByMCPToken(match[1]);
+      if (user) return user;
+    }
+  }
+
+  return null;
 }
 
 export async function requireAuth(

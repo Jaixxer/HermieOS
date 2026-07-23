@@ -176,4 +176,27 @@ export async function setDisplayName(userId: string, displayName: string): Promi
     .where(eq(schema.users.id, userId));
 }
 
+/**
+ * Look up a user by their MCP bearer token. Used by the API
+ * to support desktop/mobile clients that authenticate with
+ * the same token as the MCP server, avoiding session management.
+ */
+export async function findUserByMCPToken(token: string): Promise<SessionUser | null> {
+  const db = getDb();
+  const [user] = await db
+    .select()
+    .from(schema.users)
+    .where(eq(schema.users.mcpToken, token))
+    .limit(1);
+  if (!user) return null;
+  if (user.archivedAt) return null;
+  return {
+    id: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    mcpToken: user.mcpToken,
+    schedulerEnabled: user.schedulerEnabled,
+  };
+}
+
 void randomUUID; // reserved for future use

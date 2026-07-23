@@ -1,46 +1,27 @@
-/**
- * Server connection state — persists the HermieOS server URL and
- * provides a health-check mechanism. Used by the desktop client
- * to connect to remote HermieOS instances.
- */
 import * as React from 'react';
-import { setApiBase } from './api';
+import { setApiBase, setApiToken } from './api';
 
-const STORAGE_KEY = 'hermieos_server_url';
+const STORAGE_URL = 'hermieos_server_url';
+const STORAGE_TOKEN = 'hermieos_mcp_token';
 
 export interface ServerState {
-  /** The configured server URL (e.g. http://192.168.1.50:3001) */
   url: string;
-  /** Whether the configured server is reachable and healthy */
   connected: boolean;
-  /** True while a health check is in progress */
   checking: boolean;
-  /** Last health check error, if any */
   error: string | null;
-  /** Connect to a new server URL */
-  connect: (url: string) => Promise<void>;
-  /** Disconnect and go back to server selection */
+  /** Connect with a server URL + MCP bearer token */
+  connect: (url: string, token: string) => Promise<void>;
   disconnect: () => void;
 }
 
-function loadStoredUrl(): string {
-  try {
-    return localStorage.getItem(STORAGE_KEY) ?? '';
-  } catch {
-    return '';
-  }
+function loadStr(key: string): string {
+  try { return localStorage.getItem(key) ?? ''; } catch { return ''; }
 }
-
-function storeUrl(url: string): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, url);
-  } catch { /* noop */ }
+function storeStr(key: string, val: string): void {
+  try { localStorage.setItem(key, val); } catch { /* noop */ }
 }
-
-function clearStoredUrl(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch { /* noop */ }
+function clearStr(key: string): void {
+  try { localStorage.removeItem(key); } catch { /* noop */ }
 }
 
 const Ctx = React.createContext<ServerState | null>(null);
@@ -51,52 +32,71 @@ export function useServer(): ServerState {
   return s;
 }
 
+/**
+ * Validates a connection by calling GET /me with the bearer token.
+ * A 200 means the server is reachable, the token is valid, and the
+ * user account is active.
+ */
+async function validateToken(server: string, token: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${server}/me`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeUrl(raw: string): string {
+  let u = raw.trim().replace(/\/+$/, '');
+  if (!u.startsWith('http://') && !u.startsWith('https://')) {
+    u = `http://${u}`;
+  }
+  return u;
+}
+
 export function ServerProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
-  const [url, setUrl] = React.useState(loadStoredUrl);
+  const [url, setUrl] = React.useState(() => loadStr(STORAGE_URL));
+  const [token, setTokenState] = React.useState(() => loadStr(STORAGE_TOKEN));
   const [connected, setConnected] = React.useState(false);
   const [checking, setChecking] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Auto-check on mount
+  // Auto-connect on mount if credentials are stored
   React.useEffect(() => {
-    const stored = loadStoredUrl();
-    if (stored) {
-      check(stored).then((ok) => {
-        setUrl(stored);
-        setConnected(ok);
-        if (!ok) setError('Server unreachable');
-      }).catch(() => {});
+    const storedUrl = loadStr(STORAGE_URL);
+    const storedToken = loadStr(STORAGE_TOKEN);
+    if (storedUrl && storedToken) {
+      setChecking(true);
+      validateToken(storedUrl, storedToken).then((ok) => {
+        if (ok) {
+          setApiBase(storedUrl);
+          setApiToken(storedToken);
+          setConnected(true);
+        }
+        setChecking(false);
+      }).catch(() => setChecking(false));
     }
   }, []);
 
-  async function check(server: string): Promise<boolean> {
-    try {
-      const res = await fetch(`${server}/healthz`, { signal: AbortSignal.timeout(5000) });
-      return res.ok;
-    } catch {
-      return false;
-    }
-  }
-
-  async function connect(server: string): Promise<void> {
-    // Normalize URL — strip trailing slashes, ensure http(s) prefix
-    let u = server.trim().replace(/\/+$/, '');
-    if (!u.startsWith('http://') && !u.startsWith('https://')) {
-      u = `http://${u}`;
-    }
-
+  async function connect(server: string, tok: string): Promise<void> {
+    const u = normalizeUrl(server);
     setChecking(true);
     setError(null);
     try {
-      const ok = await check(u);
-      if (!ok) throw new Error('Server did not respond — check the URL');
-      storeUrl(u);
-      setUrl(u);
-      setConnected(true);
+      const ok = await validateToken(u, tok);
+      if (!ok) throw new Error('Connection failed — check the URL and token');
+      storeStr(STORAGE_URL, u);
+      storeStr(STORAGE_TOKEN, tok);
       setApiBase(u);
+      setApiToken(tok);
+      setUrl(u);
+      setTokenState(tok);
+      setConnected(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Connection failed');
-      setConnected(false);
       throw e;
     } finally {
       setChecking(false);
@@ -104,11 +104,14 @@ export function ServerProvider({ children }: { children: React.ReactNode }): Rea
   }
 
   function disconnect(): void {
-    clearStoredUrl();
+    clearStr(STORAGE_URL);
+    clearStr(STORAGE_TOKEN);
+    setApiBase('');
+    setApiToken('');
     setUrl('');
+    setTokenState('');
     setConnected(false);
     setError(null);
-    setApiBase('');
   }
 
   return (

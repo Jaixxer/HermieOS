@@ -95,20 +95,28 @@ export class ApiError extends Error {
 const DEFAULT_BASE = '/api';
 
 let _base = DEFAULT_BASE;
+let _token = '';
 
 /** Set the API base URL (called by ServerProvider on connect/disconnect). */
 export function setApiBase(url: string): void {
   _base = url ? `${url.replace(/\/+$/, '')}/api` : DEFAULT_BASE;
 }
 
+/** Set the bearer token for API requests (called by ServerProvider). */
+export function setApiToken(token: string): void {
+  _token = token;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = {
+    ...(init.body ? { 'content-type': 'application/json' } : {}),
+    ...(init.headers as Record<string, string> ?? {}),
+  };
+  if (_token) headers['authorization'] = `Bearer ${_token}`;
   const res = await fetch(`${_base}${path}`, {
     ...init,
     credentials: 'include',
-    headers: {
-      ...(init.body ? { 'content-type': 'application/json' } : {}),
-      ...(init.headers ?? {}),
-    },
+    headers,
   });
   if (!res.ok) {
     let body: unknown = null;

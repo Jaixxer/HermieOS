@@ -26,10 +26,9 @@ function RequireAuth({ children }: { children: ReactNode }): React.JSX.Element {
 }
 
 export function App(): React.JSX.Element {
-  const { connected, url } = useServer();
+  const { connected } = useServer();
 
-  // Connection gate — show connect page if no server configured
-  if (!connected && !url) {
+  if (!connected) {
     return <ConnectPage />;
   }
 
