@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import type { ReactNode } from 'react';
 import { api, ApiError } from './api';
 import type { User } from './api';
+import { useServer } from './server';
 
 interface AuthState {
   user: User | null;
@@ -21,6 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [mcpToken, setMcpToken] = useState<string | null>(null);
+  const { connected } = useServer();
 
   const refresh = useCallback(async () => {
     try {
@@ -37,9 +39,16 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     }
   }, []);
 
+  // Refresh auth when server connection is established.
+  // This covers: initial mount (connected may already be true from
+  // localStorage auto-connect) AND manual connect from ConnectPage.
   useEffect(() => {
-    refresh().catch(() => setLoading(false));
-  }, [refresh]);
+    if (connected) {
+      refresh().catch(() => setLoading(false));
+    } else {
+      setLoading(false);
+    }
+  }, [connected, refresh]);
 
   const signup = useCallback(
     async (email: string, password: string, displayName?: string) => {
