@@ -39,6 +39,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(cors, {
     origin: true,
     credentials: true,
+    allowedHeaders: ['content-type', 'authorization'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   });
   // The @fastify/sse 0.5.0 default export is wrapped in fastify-plugin,
   // which produces a value whose TypeScript signature doesn't structurally
