@@ -10,8 +10,11 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
     },
   },
+  // Prevent Vite from obscuring Rust errors
+  clearScreen: false,
   server: {
     port: 5173,
+    strictPort: true,
     proxy: {
       '/api': {
         target: 'http://localhost:3001',
@@ -20,6 +23,8 @@ export default defineConfig({
       },
     },
   },
+  // Tauri expects a stable env prefix, not the full VITE_ set
+  envPrefix: ['VITE_', 'TAURI_'],
   test: {
     environment: 'jsdom',
     globals: true,

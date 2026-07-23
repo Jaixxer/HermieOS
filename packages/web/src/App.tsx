@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useAuth } from './auth';
 import { Layout } from './components/Layout';
+import { DesktopShell } from './DesktopShell';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { FeedPage } from './pages/FeedPage';
@@ -10,6 +11,9 @@ import { SubscriptionsPage } from './pages/SubscriptionsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { McpTokenPage } from './pages/McpTokenPage';
 import { GraphPage } from './pages/GraphPage';
+import { isTauri } from './tauri';
+
+const Shell = isTauri() ? DesktopShell : Layout;
 
 function RequireAuth({ children }: { children: ReactNode }): React.JSX.Element {
   const { user, loading } = useAuth();
@@ -28,7 +32,7 @@ export function App(): React.JSX.Element {
         path="/"
         element={
           <RequireAuth>
-            <Layout />
+            <Shell />
           </RequireAuth>
         }
       >

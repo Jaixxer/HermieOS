@@ -206,6 +206,13 @@ export const api = {
   runs(limit = 20): Promise<{ runs: Array<{ id: string; kind: string; status: string; createdAt: string }> }> {
     return request(`/runs?limit=${limit}`);
   },
+  listObjects(params: { type?: string; limit?: number } = {}): Promise<{ objects: ObjectSummary[] }> {
+    const qs = new URLSearchParams();
+    if (params.type) qs.set('type', params.type);
+    if (params.limit) qs.set('limit', String(params.limit));
+    const q = qs.toString();
+    return request(`/objects${q ? `?${q}` : ''}`);
+  },
   pushVapidKey(): Promise<{ publicKey: string }> {
     return request('/me/push-vapid-key');
   },
