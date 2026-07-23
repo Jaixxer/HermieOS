@@ -218,6 +218,9 @@ export const api = {
   graph(): Promise<{ nodes: Array<{ id: string; title: string; type: string; priority: number }>; links: Array<{ source: string; target: string; kind: string; confidence: number; reason: string }> }> {
     return request('/graph');
   },
+  deleteAccount(body: { confirmation: string }): Promise<{ ok: true }> {
+    return request('/me/delete', { method: 'POST', body: JSON.stringify(body) });
+  },
 };
 
 export function sseUrl(): string {

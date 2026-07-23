@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../auth';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 
 export function SettingsPage(): React.JSX.Element {
@@ -8,6 +8,8 @@ export function SettingsPage(): React.JSX.Element {
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const navigate = useNavigate();
 
   if (!user) return <></>;
 
@@ -36,6 +38,33 @@ export function SettingsPage(): React.JSX.Element {
       setMsg(e instanceof Error ? e.message : 'Failed');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function exportData(): Promise<void> {
+    try {
+      const res = await fetch('/api/me/export', { credentials: 'include' });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'hermieos-export.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      setMsg('Export downloaded');
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Export failed');
+    }
+  }
+
+  async function deleteAccount(): Promise<void> {
+    if (!user) return;
+    const confirmation = `${user.id}:${user.email}`;
+    try {
+      await api.deleteAccount({ confirmation });
+      navigate('/login');
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Delete failed');
     }
   }
 
@@ -84,6 +113,36 @@ export function SettingsPage(): React.JSX.Element {
         <Link to="/settings/mcp-token" className="btn-secondary inline-block">
           View / rotate token
         </Link>
+      </section>
+
+      <section className="card space-y-3">
+        <h2 className="font-medium">Export data</h2>
+        <p className="text-sm text-slate-400">
+          Download all your objects, relationships, feedback, and history as JSON.
+        </p>
+        <button className="btn-secondary" onClick={() => { exportData().catch(() => {}); }}>
+          Download export
+        </button>
+      </section>
+
+      <section className="card space-y-3 border-red-900/40">
+        <h2 className="font-medium text-red-400">Delete account</h2>
+        <p className="text-sm text-slate-400">
+          This permanently deletes your account and all data. Type your email to confirm.
+        </p>
+        <input
+          className="input"
+          placeholder={user.email}
+          value={deleteConfirm}
+          onChange={(e) => setDeleteConfirm(e.target.value)}
+        />
+        <button
+          className="px-3 py-1.5 rounded-md bg-red-800 text-red-100 text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition"
+          disabled={deleteConfirm !== user.email}
+          onClick={() => { deleteAccount().catch(() => {}); }}
+        >
+          Delete my account
+        </button>
       </section>
     </div>
   );

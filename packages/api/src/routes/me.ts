@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { rotateMcpToken, setSchedulerEnabled } from '../data/auth.js';
 import { savePushSubscription, removePushSubscription, getVapidPublicKey } from '@hermieos/mcp/src/data/push.js';
+import { exportUserData, hardDeleteUser } from '@hermieos/mcp/src/data/account.js';
 import { BadRequest, Unauthorized, sendError } from '../errors.js';
 
 const schedulerBodySchema = z.object({
@@ -80,6 +81,36 @@ export async function registerMeRoutes(app: FastifyInstance): Promise<void> {
       return sendError(reply, new BadRequest('endpoint is required'), String(req.id));
     }
     await removePushSubscription(req.user.id, body.endpoint);
+    return { ok: true };
+  });
+
+  // GET /me/export — returns a JSON dump of all user data
+  app.get('/me/export', async (req, reply) => {
+    if (!req.user) {
+      return sendError(reply, new Unauthorized(), String(req.id));
+    }
+    const data = await exportUserData(req.user.id);
+    reply.header('content-disposition', 'attachment; filename="hermieos-export.json"');
+    return data;
+  });
+
+  // POST /me/delete — hard delete the account and all data.
+  // Requires a confirmation token: the user's id + email joined by ':'.
+  app.post('/me/delete', async (req, reply) => {
+    if (!req.user) {
+      return sendError(reply, new Unauthorized(), String(req.id));
+    }
+    const body = req.body as { confirmation?: string };
+    if (!body.confirmation) {
+      return sendError(
+        reply,
+        new BadRequest('confirmation token required — send user id + email joined by ":"'),
+        String(req.id),
+      );
+    }
+    await hardDeleteUser(req.user.id, body.confirmation);
+    // Clear the session cookie since the account is gone
+    reply.clearCookie('hermieos_session', { path: '/' });
     return { ok: true };
   });
 }
