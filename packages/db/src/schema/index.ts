@@ -173,11 +173,9 @@ export const objects = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
-    // search_vector is a PostgreSQL GENERATED ALWAYS AS STORED column
-    // added by drizzle/0001_add_object_search_vector.sql. It is NOT
-    // declared as a Drizzle column because Drizzle does not support
-    // generated columns. The searchObjects() function queries it via
-    // raw SQL (db.execute).
+    // Generated columns (managed via SQL migrations, not Drizzle):
+    //   search_vector — tsvector (0001)
+    //   embedding     — vector(1536) (0004, pgvector extension)
   },
   (t) => [
     index('objects_user_type_status_updated_idx').on(
