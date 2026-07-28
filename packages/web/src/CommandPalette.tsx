@@ -8,13 +8,14 @@
 import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Home, Network, ListTodo, Settings, RefreshCw, Box, FileText, Sparkles, GitBranch, Target, ArrowUpRight, StickyNote, LayoutGrid, Circle } from 'lucide-react';
 import { api, type ObjectSummary } from './api';
 
 interface CommandItem {
   id: string;
   label: string;
   subtitle: string;
-  icon: string;
+  icon: React.ElementType;
   action: () => void;
 }
 
@@ -61,10 +62,10 @@ export function CommandPalette(): React.JSX.Element | null {
 
   // Navigation
   items.push(
-    { id: 'nav-feed', label: 'Go to Feed', subtitle: '/', icon: '◉', action: () => navigate('/') },
-    { id: 'nav-graph', label: 'Go to Graph', subtitle: '/graph', icon: '◈', action: () => navigate('/graph') },
-    { id: 'nav-subs', label: 'Go to Subscriptions', subtitle: '/subscriptions', icon: '⚡', action: () => navigate('/subscriptions') },
-    { id: 'nav-settings', label: 'Go to Settings', subtitle: '/settings', icon: '⚙', action: () => navigate('/settings') },
+    { id: 'nav-feed', label: 'Go to Feed', subtitle: '/', icon: Home, action: () => navigate('/') },
+    { id: 'nav-graph', label: 'Go to Graph', subtitle: '/graph', icon: Network, action: () => navigate('/graph') },
+    { id: 'nav-subs', label: 'Go to Subscriptions', subtitle: '/subscriptions', icon: ListTodo, action: () => navigate('/subscriptions') },
+    { id: 'nav-settings', label: 'Go to Settings', subtitle: '/settings', icon: Settings, action: () => navigate('/settings') },
   );
 
   // Search objects
@@ -74,7 +75,7 @@ export function CommandPalette(): React.JSX.Element | null {
         id: o.id,
         label: o.title,
         subtitle: `${o.type} · priority ${o.priority}`,
-        icon: typeIcon(o.type),
+        icon: TypeIcon(o.type),
         action: () => navigate(`/objects/${o.id}`),
       });
     }
@@ -82,7 +83,7 @@ export function CommandPalette(): React.JSX.Element | null {
 
   // Actions
   items.push(
-    { id: 'action-refresh', label: 'Refresh data', subtitle: 'Invalidate all caches', icon: '↻', action: () => { qc.invalidateQueries(); setOpen(false); } },
+    { id: 'action-refresh', label: 'Refresh data', subtitle: 'Invalidate all caches', icon: RefreshCw, action: () => { qc.invalidateQueries(); setOpen(false); } },
   );
 
   // Fuzzy filter
@@ -137,7 +138,7 @@ export function CommandPalette(): React.JSX.Element | null {
               onClick={() => { item.action(); setOpen(false); }}
               onMouseEnter={() => setSelected(i)}
             >
-              <span className="text-base w-5 text-center">{item.icon}</span>
+              <span className="text-base w-5 text-center flex items-center justify-center text-text-tertiary"><item.icon className="w-4 h-4" /></span>
               <div className="flex-1 min-w-0">
                 <div className="text-sm text-slate-200 truncate">{item.label}</div>
                 <div className="text-[11px] text-slate-500 truncate">{item.subtitle}</div>
@@ -154,11 +155,16 @@ export function CommandPalette(): React.JSX.Element | null {
   );
 }
 
-function typeIcon(type: string): string {
-  const icons: Record<string, string> = {
-    project: '◆', research: '◇', discovery: '✦',
-    decision: '◈', opportunity: '○', learning_path: '↗',
-    note: '—', collection: '⊞',
+function TypeIcon(type: string): React.ElementType {
+  const icons: Record<string, React.ElementType> = {
+    project: Box,
+    research: FileText,
+    discovery: Sparkles,
+    decision: GitBranch,
+    opportunity: Target,
+    learning_path: ArrowUpRight,
+    note: StickyNote,
+    collection: LayoutGrid,
   };
-  return icons[type] ?? '•';
+  return icons[type] ?? Circle;
 }

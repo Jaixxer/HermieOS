@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, avg, count, desc, eq, gte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { schema } from '@hermieos/db';
 import { getDb } from './db.js';
 
@@ -49,6 +49,187 @@ export async function getRecentRuns(
     .orderBy(desc(schema.hermesRuns.createdAt))
     .limit(limit);
   return { runs: rows.map(rowToRun) };
+}
+
+/**
+ * Per-subscription (scout) run history. Newest first. Includes all
+ * hermes_runs rows that reference the subscription, regardless of
+ * status — so the user can see the full retry/success/fail trail.
+ */
+export async function getScoutRunHistory(
+  userId: string,
+  subscriptionId: string,
+  limit = 50,
+): Promise<{ runs: HermesRunRow[] }> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.hermesRuns)
+    .where(
+      and(
+        eq(schema.hermesRuns.userId, userId),
+        eq(schema.hermesRuns.subscriptionId, subscriptionId),
+      ),
+    )
+    .orderBy(desc(schema.hermesRuns.createdAt))
+    .limit(limit);
+  return { runs: rows.map(rowToRun) };
+}
+
+export interface ScoutMetrics {
+  totalRuns: number;
+  succeededRuns: number;
+  failedRuns: number;
+  cancelledRuns: number;
+  /** Last 7 days. */
+  last7DaysRuns: number;
+  last7DaysSucceeded: number;
+  /** Average runtime for successful runs in ms. null if no completed runs. */
+  avgRuntimeMs: number | null;
+  /** How many opportunity objects the scout's runs have created. */
+  opportunitiesCreated: number;
+  /** Top sources (by occurrences in objects.body->>'source') for the scout. */
+  topSources: Array<{ source: string; count: number }>;
+  /** Last successful run. null if never succeeded. */
+  lastSuccessAt: Date | null;
+  /** Last run, regardless of status. null if never run. */
+  lastRunAt: Date | null;
+}
+
+/**
+ * Aggregate metrics for a single scout. One round-trip with CTEs.
+ *
+ * - Runs counts come from hermes_runs filtered by subscription_id.
+ * - Opportunities come from objects(type='opportunity') whose body
+ *   references the scout via body->>'subscriptionId' OR body->>'source'
+ *   matches the subscription's target. We use the body->>'subscriptionId'
+ *   path (set by the agent when it records findings) and fall back to a
+ *   body->>'target' match on the subscription's target string.
+ */
+export async function getScoutMetrics(
+  userId: string,
+  subscriptionId: string,
+  subscriptionTarget: string,
+): Promise<ScoutMetrics> {
+  const db = getDb();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60_000);
+
+  // Run counts (CTE)
+  const countsRow = await db
+    .select({
+      total: count(),
+      succeeded: sql<number>`count(*) filter (where ${schema.hermesRuns.status} = 'succeeded')`,
+      failed: sql<number>`count(*) filter (where ${schema.hermesRuns.status} = 'failed')`,
+      cancelled: sql<number>`count(*) filter (where ${schema.hermesRuns.status} = 'cancelled')`,
+      last7: sql<number>`count(*) filter (where ${schema.hermesRuns.createdAt} >= ${sevenDaysAgo.toISOString()})`,
+      last7Succeeded: sql<number>`count(*) filter (where ${schema.hermesRuns.status} = 'succeeded' and ${schema.hermesRuns.createdAt} >= ${sevenDaysAgo.toISOString()})`,
+    })
+    .from(schema.hermesRuns)
+    .where(
+      and(
+        eq(schema.hermesRuns.userId, userId),
+        eq(schema.hermesRuns.subscriptionId, subscriptionId),
+      ),
+    );
+
+  // Average runtime for succeeded runs (ms)
+  const avgRow = await db
+    .select({
+      avgMs: sql<number | null>`avg(extract(epoch from (${schema.hermesRuns.finishedAt} - ${schema.hermesRuns.startedAt})) * 1000)`,
+    })
+    .from(schema.hermesRuns)
+    .where(
+      and(
+        eq(schema.hermesRuns.userId, userId),
+        eq(schema.hermesRuns.subscriptionId, subscriptionId),
+        eq(schema.hermesRuns.status, 'succeeded'),
+        isNotNull(schema.hermesRuns.startedAt),
+        isNotNull(schema.hermesRuns.finishedAt),
+      ),
+    );
+
+  // Last run + last success
+  const lastRunRow = await db
+    .select({ at: schema.hermesRuns.createdAt })
+    .from(schema.hermesRuns)
+    .where(
+      and(
+        eq(schema.hermesRuns.userId, userId),
+        eq(schema.hermesRuns.subscriptionId, subscriptionId),
+      ),
+    )
+    .orderBy(desc(schema.hermesRuns.createdAt))
+    .limit(1);
+  const lastSuccessRow = await db
+    .select({ at: schema.hermesRuns.createdAt })
+    .from(schema.hermesRuns)
+    .where(
+      and(
+        eq(schema.hermesRuns.userId, userId),
+        eq(schema.hermesRuns.subscriptionId, subscriptionId),
+        eq(schema.hermesRuns.status, 'succeeded'),
+      ),
+    )
+    .orderBy(desc(schema.hermesRuns.createdAt))
+    .limit(1);
+
+  // Opportunities created with this scout's subscriptionId or target in body
+  const oppsCountRow = await db
+    .select({ count: count() })
+    .from(schema.objects)
+    .where(
+      and(
+        eq(schema.objects.userId, userId),
+        eq(schema.objects.type, 'opportunity'),
+        isNull(schema.objects.archivedAt),
+        sql`(${schema.objects.body}->>'subscriptionId')::uuid = ${subscriptionId}`,
+      ),
+    );
+
+  // Top sources for this scout's opportunities
+  const topSourcesRows = await db
+    .select({
+      source: sql<string>`coalesce(${schema.objects.body}->>'source', 'unknown')`,
+      count: count(),
+    })
+    .from(schema.objects)
+    .where(
+      and(
+        eq(schema.objects.userId, userId),
+        eq(schema.objects.type, 'opportunity'),
+        isNull(schema.objects.archivedAt),
+        sql`(${schema.objects.body}->>'subscriptionId')::uuid = ${subscriptionId}`,
+      ),
+    )
+    .groupBy(sql`${schema.objects.body}->>'source'`)
+    .orderBy(sql`count(*) desc`)
+    .limit(10);
+
+  const counts = countsRow[0] ?? {
+    total: 0,
+    succeeded: 0,
+    failed: 0,
+    cancelled: 0,
+    last7: 0,
+    last7Succeeded: 0,
+  };
+
+  return {
+    totalRuns: Number(counts.total),
+    succeededRuns: Number(counts.succeeded),
+    failedRuns: Number(counts.failed),
+    cancelledRuns: Number(counts.cancelled),
+    last7DaysRuns: Number(counts.last7),
+    last7DaysSucceeded: Number(counts.last7Succeeded),
+    avgRuntimeMs: avgRow[0]?.avgMs != null ? Number(avgRow[0].avgMs) : null,
+    opportunitiesCreated: Number(oppsCountRow[0]?.count ?? 0),
+    topSources: topSourcesRows.map((r) => ({
+      source: r.source,
+      count: Number(r.count),
+    })),
+    lastSuccessAt: lastSuccessRow[0]?.at ?? null,
+    lastRunAt: lastRunRow[0]?.at ?? null,
+  };
 }
 
 // Convenience for the scheduler (Phase 2). Used by tests too.

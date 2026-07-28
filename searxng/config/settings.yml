@@ -1,0 +1,46 @@
+use_default_settings: true
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json
+server:
+  # secret_key is set via SEARXNG_SECRET env var in docker-compose
+  # so each fresh data dir gets a unique one.
+  bind_address: "0.0.0.0"
+  port: 8080
+  method: POST
+  limiter: false
+  image_proxy: false
+ui:
+  default_theme: simple
+  default_locale: en
+engines:
+  - name: duckduckgo
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: google
+    disabled: true
+  - name: bing
+    disabled: true
+  - name: arxiv
+    disabled: false
+  - name: github
+    disabled: false
+  - name: semantic scholar
+    disabled: false
+  - name: pubmed
+    disabled: false
+  - name: crossref
+    disabled: false
+  - name: openalex
+    disabled: false
+  - name: wikipedia
+    disabled: false
+  - name: startpage
+    disabled: false
+  - name: qwant
+    disabled: false
+  - name: mojeek
+    disabled: false

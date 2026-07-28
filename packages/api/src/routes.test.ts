@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { buildApp } from './server.js';
 import { setDb } from './data/auth.js';
+import { setDb as setMcpDb } from '@hermieos/mcp/src/data/db.js';
 import { createDatabase, schema, closeDatabase, type Database } from '@hermieos/db';
 import type { FastifyInstance } from 'fastify';
 
@@ -71,6 +72,7 @@ beforeAll(async () => {
     url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos',
   });
   setDb(db);
+  setMcpDb(db);
   app = await buildApp();
   await cleanup();
 });

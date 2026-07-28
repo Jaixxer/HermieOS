@@ -16,8 +16,11 @@ import { registerFeedRoutes } from './routes/feed.js';
 import { registerObjectRoutes } from './routes/objects.js';
 import { registerSearchAndFeedbackRoutes } from './routes/search-feedback.js';
 import { registerSubscriptionRoutes } from './routes/subscriptions.js';
+import { registerCategoryRoutes } from './routes/categories.js';
 import { registerRunRoutes } from './routes/runs.js';
 import { registerEventsRoutes } from './routes/events.js';
+import { registerDashboardRoutes } from './routes/dashboard.js';
+import { registerCalendarRoutes } from './routes/calendar.js';
 import { ApiError, sendError } from './errors.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -101,8 +104,11 @@ export async function buildApp(): Promise<FastifyInstance> {
   await registerObjectRoutes(app);
   await registerSearchAndFeedbackRoutes(app);
   await registerSubscriptionRoutes(app);
+  await registerCategoryRoutes(app);
   await registerRunRoutes(app);
   await registerEventsRoutes(app);
+  await registerDashboardRoutes(app);
+  await registerCalendarRoutes(app);
 
   // Serve the web client (PWA) from the built dist/ directory.
   if (existsSync(webDist)) {

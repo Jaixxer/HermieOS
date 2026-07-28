@@ -47,6 +47,32 @@ services:
     volumes:
       - ./packages/scheduler/fake-hermes-docker.js:/app/fake-hermes.js:ro
 
+  # SearXNG — privacy-respecting metasearch engine used by Hermes
+  # for web_search. Two persistent volumes (config + data) so settings,
+  # favicon cache, and rate-limit state survive container recreates.
+  # The 8888 host port is what the host browser / Hermes profile use.
+  searxng:
+    image: searxng/searxng:latest
+    container_name: hermieos-searxng
+    restart: unless-stopped
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./searxng/config:/etc/searxng:rw
+      - searxng-data:/var/cache/searxng:rw
+    environment:
+      # SEARXNG_SECRET is read at startup and substituted into settings.yml's
+      # server.secret_key. Rotate to invalidate cached cookies.
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-REDACTED_SEARXNG_SECRET}
+      SEARXNG_BIND_ADDRESS: "0.0.0.0:8080"
+      # What Hermes uses to reach SearXNG inside the compose network.
+      SEARXNG_BASE_URL: http://searxng:8080
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   api:
     build:
       context: .
@@ -63,6 +89,9 @@ services:
       PUSH_VAPID_PUBLIC: ${PUSH_VAPID_PUBLIC:-}
       PUSH_VAPID_PRIVATE: ${PUSH_VAPID_PRIVATE:-}
       PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-mailto:admin@hermieos.local}
+      HERMES_GATEWAY_URL: ${HERMES_GATEWAY_URL:-http://hermes:8642}
+      HERMES_PUBLIC_URL: ${HERMES_PUBLIC_URL:-}
+      HERMES_API_KEY: ${HERMES_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -175,6 +204,9 @@ services:
       # considered stale. Override here to keep the cached model working.
       # (For production, rotate to a fresh API key and `hermes auth add`.)
       OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-REDACTED_OPENAI_API_KEY}
+      # Web search via the local SearXNG container. Inside the compose
+      # network searxng is reachable as http://searxng:8080.
+      SEARXNG_URL: http://searxng:8080
     volumes:
       - hermes-data:/opt/data
     ports:
@@ -183,6 +215,8 @@ services:
     depends_on:
       hermes-init:
         condition: service_completed_successfully
+      searxng:
+        condition: service_started
     profiles: ["real"]
     deploy:
       resources:
@@ -192,6 +226,7 @@ services:
 
 volumes:
   hermieos-pgdata:
+  searxng-data:
   hermes-data:
     # Pre-populated by the user before `docker compose up`. To reseed
     # from an existing host dir, run:

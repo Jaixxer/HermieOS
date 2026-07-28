@@ -11,6 +11,9 @@ export interface ServerState {
   error: string | null;
   /** Connect with a server URL + MCP bearer token */
   connect: (url: string, token: string) => Promise<void>;
+  /** URL-only mode: remember the API origin without an MCP token.
+   *  Used after email login so page refreshes know where to call. */
+  setBaseUrl: (url: string) => void;
   disconnect: () => void;
 }
 
@@ -57,6 +60,20 @@ function normalizeUrl(raw: string): string {
   return u;
 }
 
+/**
+ * When the user is in the Vite dev environment (running on
+ * localhost:5173) the API lives at localhost:3001. This is the
+ * default when nothing is stored and no other origin is supplied.
+ */
+function inferDevApiBase(): string {
+  if (typeof window === 'undefined') return '';
+  const { protocol, hostname, port } = window.location;
+  if (hostname === 'localhost' && port === '5173') {
+    return `${protocol}//${hostname}:3001`;
+  }
+  return '';
+}
+
 export function ServerProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const [url, setUrl] = React.useState(() => loadStr(STORAGE_URL));
   const [token, setTokenState] = React.useState(() => loadStr(STORAGE_TOKEN));
@@ -64,9 +81,22 @@ export function ServerProvider({ children }: { children: React.ReactNode }): Rea
   const [checking, setChecking] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Auto-connect on mount if credentials are stored
+  // Auto-connect on mount if credentials are stored. We support three
+  // modes:
+  //   1. MCP token + URL — full server connect. The token is the
+  //      bearer for /me and all other requests.
+  //   2. URL only — used after a successful email login, where the
+  //      session token (set by AuthProvider) is the bearer. Without
+  //      this fallback an email login would still need a fresh MCP
+  //      token on every page refresh.
+  //   3. hermieos_api_base (set by the login response) — Electron
+  //      users who only logged in via email/password don't have
+  //      STORAGE_URL set, but we do persist the API base alongside
+  //      the session token. This restores the URL on refresh so the
+  //      session survives.
   React.useEffect(() => {
     const storedUrl = loadStr(STORAGE_URL);
+    const storedApiBase = loadStr('hermieos_api_base');
     const storedToken = loadStr(STORAGE_TOKEN);
     if (storedUrl && storedToken) {
       setChecking(true);
@@ -78,6 +108,24 @@ export function ServerProvider({ children }: { children: React.ReactNode }): Rea
         }
         setChecking(false);
       }).catch(() => setChecking(false));
+    } else if (storedUrl) {
+      // URL-only mode: just remember where the API lives. The session
+      // token (set by AuthProvider) provides auth on requests.
+      setApiBase(storedUrl);
+      setUrl(storedUrl);
+    } else if (storedApiBase) {
+      // Email-only mode: the API base is stored alongside the
+      // session token. No MCP token, but we know where to call.
+      setApiBase(storedApiBase);
+      setUrl(storedApiBase);
+    } else {
+      // Last-resort: in Vite dev, infer localhost:3001. In
+      // Electron with file://, the user must configure.
+      const inferred = inferDevApiBase();
+      if (inferred) {
+        setApiBase(inferred);
+        setUrl(inferred);
+      }
     }
   }, []);
 
@@ -103,6 +151,23 @@ export function ServerProvider({ children }: { children: React.ReactNode }): Rea
     }
   }
 
+  /**
+   * URL-only mode: remember where the API lives so the email-login
+   * session token can be used without going through the full MCP
+   * connect flow on every page refresh. Called by AuthProvider on
+   * successful login/signup.
+   */
+  function setBaseUrl(server: string): void {
+    const u = normalizeUrl(server);
+    storeStr(STORAGE_URL, u);
+    setApiBase(u);
+    setUrl(u);
+    // A session token alone isn't enough to declare connected; the
+    // /me check below decides that. But it IS enough to know where
+    // to send the /me check.
+    if (loadStr(STORAGE_TOKEN)) setConnected(true);
+  }
+
   function disconnect(): void {
     clearStr(STORAGE_URL);
     clearStr(STORAGE_TOKEN);
@@ -115,7 +180,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }): Rea
   }
 
   return (
-    <Ctx.Provider value={{ url, connected, checking, error, connect, disconnect }}>
+    <Ctx.Provider value={{ url, connected, checking, error, connect, setBaseUrl, disconnect }}>
       {children}
     </Ctx.Provider>
   );

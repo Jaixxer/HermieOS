@@ -1,8 +1,7 @@
 ---
 name: hermieos-research
-description: Ad-hoc research on the user's behalf. Search existing objects first, then go fetch what's missing. Create new objects for what you find. Load this skill when the dispatch envelope has `event: research` or when the user asks a one-off research question in chat.
-version: 1.0.0
-author: HermieOS
+description: "Ad-hoc research on the user's behalf. Search existing objects first, then go fetch what's missing. Create new objects for what you find. Load this skill when the dispatch envelope has `event: research` or when the user asks a one-off research question in chat."
+license: MIT
 ---
 
 # HermieOS — Research

@@ -15,7 +15,6 @@ import { createDatabase, closeDatabase, schema } from '@hermieos/db';
 import { createObject } from '@hermieos/mcp/src/data/objects.js';
 import { linkObjects } from '@hermieos/mcp/src/data/relationships.js';
 import { recordFeedback, type FeedbackKind } from '@hermieos/mcp/src/data/feedback.js';
-import { createSubscription } from '@hermieos/mcp/src/data/subscriptions.js';
 
 if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:5432/hermieos';
@@ -134,15 +133,9 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`  recorded ${feedback.length} feedback rows`);
 
-  // 5. subscription
-  const sub = await createSubscription(userId, {
-    name: 'Watch for Hermes updates',
-    target: 'hermes-changelog',
-    instruction: 'summarize new Hermes features weekly',
-    cadence: 'weekly',
-  });
-  // eslint-disable-next-line no-console
-  console.log(`  created subscription ${sub.id}`);
+  // (No seeded scouts. The Scouting page starts empty; users create
+  // their own scouts via the UI. Sample scout data was intentionally
+  // removed so the Scouting Inbox reflects real activity, not fixtures.)
 
   // eslint-disable-next-line no-console
   console.log('\n  seed complete. Sign in with this email to see the data.');

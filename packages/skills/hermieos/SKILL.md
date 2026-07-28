@@ -1,8 +1,7 @@
 ---
 name: hermieos
-description: Background worker for HermieOS. Routes dispatch envelopes to the right sub-skill. Applies the default safety rules (don't notify by default, update before creating, be terse). Load this skill on every dispatch envelope.
-version: 1.0.0
-author: HermieOS
+description: "Background worker for HermieOS. Routes dispatch envelopes to the right sub-skill. Applies the default safety rules (don't notify by default, update before creating, be terse). Load this skill on every dispatch envelope."
+license: MIT
 ---
 
 # HermieOS

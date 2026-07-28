@@ -4,6 +4,8 @@ import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'node:path';
 
 export default defineConfig({
+  // Electron loads dist via file:// — relative paths required
+  base: './',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

@@ -41,6 +41,60 @@ export async function registerMeRoutes(app: FastifyInstance): Promise<void> {
     return { mcpToken };
   });
 
+  // GET /me/hermes-info — base URL + bearer token for the user's
+  // Hermes Agent gateway. The web app needs both to call chat
+  // endpoints (POST /api/sessions/:id/chat). Returning them together
+  // avoids a round-trip through /me then a separate token fetch.
+  app.get('/me/hermes-info', async (req, reply) => {
+    if (!req.user) {
+      return sendError(reply, new Unauthorized(), String(req.id));
+    }
+    const { readMcpTokenForUser } = await import('../data/auth.js');
+    const token = await readMcpTokenForUser(req.user.id);
+    // The Hermes Agent gateway uses a single shared API_SERVER_KEY for
+    // chat sessions — there is no per-user identity in the gateway.
+    // The browser needs that shared key to call /api/sessions endpoints.
+    // We expose it here (only to authenticated users) so the web app
+    // doesn't have to embed the key in the bundle.
+    const sharedKey = process.env.HERMES_API_KEY ?? process.env.HERMES_GATEWAY_KEY ?? '';
+    // The base URL the browser should use to reach Hermes. In production,
+    // HERMES_PUBLIC_URL is set explicitly (e.g. https://hermes.example.com).
+    // In dev / single-host setups Hermes runs on the same host as this API
+    // but on a different port — we derive that from HERMES_GATEWAY_URL when
+    // available, otherwise fall back to the API's own public origin (which
+    // would only work when Hermes is reverse-proxied under the API).
+    const fromEnv = process.env.HERMES_PUBLIC_URL?.replace(/\/+$/, '');
+    if (fromEnv) return { baseUrl: fromEnv, token: sharedKey || token };
+    const internal = process.env.HERMES_GATEWAY_URL;
+    if (internal) {
+      try {
+        const u = new URL(internal);
+        // Swap the docker-internal hostname for whatever the browser used to
+        // reach us — most local installs run Hermes on the same machine.
+        const proto =
+          (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim() ??
+          req.protocol;
+        const hostHeader =
+          (req.headers['x-forwarded-host'] as string | undefined)?.split(',')[0]?.trim() ??
+          req.headers.host ??
+          'localhost';
+        const hostOnly = hostHeader.split(':')[0] ?? 'localhost';
+        return { baseUrl: `${proto}://${hostOnly}:${u.port || '8642'}`, token: sharedKey || token };
+      } catch {
+        // fall through
+      }
+    }
+    const proto =
+      (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim() ??
+      req.protocol;
+    const host =
+      (req.headers['x-forwarded-host'] as string | undefined)?.split(',')[0]?.trim() ??
+      req.headers.host ??
+      'localhost';
+    const baseUrl = `${proto}://${host}`.replace(/\/+$/, '');
+    return { baseUrl, token: sharedKey || token };
+  });
+
   // GET /me/push-vapid-key — the server's VAPID public key for Web Push
   app.get('/me/push-vapid-key', async () => {
     return { publicKey: getVapidPublicKey() };

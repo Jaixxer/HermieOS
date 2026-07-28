@@ -42,8 +42,11 @@
  *
  * Env:
  *   HERMES_SKILLS_SOURCE  - source dir (default: <repo>/packages/skills)
- *   HERMES_SKILLS_TARGET  - destination dir (default: ~/.hermes/skills)
- *   HERMES_FORCE          - '1' to overwrite user-edited skills anyway
+ *   HERMES_SKILLS_TARGET  - destination dir. Default is
+ *     $HERMES_HOME/skills if $HERMES_HOME is set, else ~/.hermes/skills.
+ *     Run this script inside the hermes container (where $HERMES_HOME
+ *     is /opt/data) to update the live skills. The hermieos-init
+ *     container in docker-compose.yml does this on first run.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -61,7 +64,14 @@ import { homedir } from 'node:os';
 
 const REPO_ROOT = process.env.HERMIEOS_REPO_ROOT ?? join(process.cwd(), '..', '..');
 const SOURCE = process.env.HERMES_SKILLS_SOURCE ?? join(REPO_ROOT, 'packages', 'skills');
-const TARGET = process.env.HERMES_SKILLS_TARGET ?? join(homedir(), '.hermes', 'skills');
+// When run inside the hermes container, $HERMES_HOME points at the live
+// skills tree (default /opt/data). When run on the host, fall back to
+// ~/.hermes/skills so local testing still works.
+const TARGET =
+  process.env.HERMES_SKILLS_TARGET
+  ?? (process.env.HERMES_HOME
+    ? join(process.env.HERMES_HOME, 'skills')
+    : join(homedir(), '.hermes', 'skills'));
 const FORCE = process.env.HERMES_FORCE === '1' || process.env.HERMES_FORCE === 'true';
 
 const MANIFEST_VERSION = 1;
@@ -423,6 +433,14 @@ function main(): void {
   console.log(
     `\n  ${result.installed.length} installed, ${result.unchanged.length} unchanged, ${result.warned.length} warned, ${result.removed.length} removed`,
   );
+  // Also chown the deployed files so the hermes user inside the
+  // container can read them. This is a no-op when running inside
+  // the container; on the host it ensures the volume's UID 10000
+  // owner can use the files.
+  if (result.installed.length > 0 || result.warned.length > 0) {
+    const { spawnSync } = require('node:child_process');
+    spawnSync('chown', ['-R', '10000:10000', TARGET], { stdio: 'inherit' });
+  }
   if (result.failed > 0) process.exit(1);
   if (result.warned.length > 0) process.exit(2);
 }

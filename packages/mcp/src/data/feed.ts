@@ -65,3 +65,34 @@ export async function markFeedRead(userId: string, upTo: Date): Promise<{ update
     .returning({ id: schema.feedEvents.id });
   return { updated: result.length };
 }
+
+export interface RecordFeedEventInput {
+  kind: schema.FeedEvent['kind'];
+  objectId?: string | null;
+  title: string;
+  body?: string | null;
+  payload?: Record<string, unknown>;
+}
+
+/**
+ * Inserts a feed event for the given user. Used by tools (e.g. create_task,
+ * create_opportunity) to surface user-visible activity in the dashboard.
+ */
+export async function recordFeedEvent(
+  userId: string,
+  input: RecordFeedEventInput,
+): Promise<FeedEventRow> {
+  const db = getDb();
+  const [row] = await db
+    .insert(schema.feedEvents)
+    .values({
+      userId,
+      kind: input.kind,
+      objectId: input.objectId ?? null,
+      title: input.title,
+      body: input.body ?? null,
+      payload: input.payload ?? {},
+    })
+    .returning();
+  return rowToFeedEvent(row!);
+}

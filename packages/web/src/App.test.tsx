@@ -9,6 +9,21 @@ vi.mock('./api', async () => {
   return actual;
 });
 
+vi.mock('./server', async () => {
+  const actual = await vi.importActual<typeof import('./server')>('./server');
+  return {
+    ...actual,
+    useServer: () => ({
+      url: 'http://localhost:3001',
+      connected: true,
+      checking: false,
+      error: null,
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    }),
+  };
+});
+
 import { App } from './App';
 import { AuthProvider } from './auth';
 

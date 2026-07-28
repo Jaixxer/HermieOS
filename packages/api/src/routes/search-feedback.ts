@@ -1,8 +1,18 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { createTtlCache } from '@hermieos/cache';
 import { searchObjects } from '@hermieos/mcp/src/data/objects.js';
 import { recordFeedback, type FeedbackKind } from '@hermieos/mcp/src/data/feedback.js';
+import {
+  findRecentFeedback,
+  aggregateFeedbackStats,
+} from '@hermieos/mcp/src/data/feedback-summary.js';
 import { BadRequest, Unauthorized, sendError } from '../errors.js';
+
+const feedbackSummaryQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
 
 const VALID_KINDS: FeedbackKind[] = ['like', 'save', 'ignore', 'archive', 'suggest'];
 
@@ -89,5 +99,41 @@ export async function registerSearchAndFeedbackRoutes(app: FastifyInstance): Pro
     // for safety — it's a cheap write.
     invalidateUserSearch(req.user.id);
     return { feedback };
+  });
+
+  // GET /feedback/summary?days=7 — returns recent feedback + the
+  // exact same aggregated stats the scheduler ships to Hermes inside
+  // its dispatch envelope. The web UI uses this to show "this is
+  // what your next scout run will see".
+  app.get('/feedback/summary', async (req, reply) => {
+    if (!req.user) {
+      return sendError(reply, new Unauthorized(), String(req.id));
+    }
+    const query = req.query as { days?: string; limit?: string };
+    const parsed = feedbackSummaryQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      return sendError(
+        reply,
+        new BadRequest(JSON.stringify(parsed.error.flatten())),
+        String(req.id),
+      );
+    }
+    const days = parsed.data.days ?? 7;
+    const limit = parsed.data.limit ?? 50;
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const rows = await findRecentFeedback(req.user.id, since, limit);
+    const stats = aggregateFeedbackStats(rows);
+    return {
+      since: since.toISOString(),
+      days,
+      rows: rows.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        payload: r.payload,
+        createdAt: r.createdAt.toISOString(),
+        object: r.object,
+      })),
+      stats,
+    };
   });
 }

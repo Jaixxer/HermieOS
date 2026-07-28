@@ -1,8 +1,7 @@
 ---
 name: hermieos-feedback-review
-description: Periodic review of accumulated user feedback. Update object priorities and surface ranking shifts. Load this skill when the dispatch envelope has `event: feedback_review`.
-version: 1.0.0
-author: HermieOS
+description: "Periodic review of accumulated user feedback. Update object priorities and surface ranking shifts. Load this skill when the dispatch envelope has `event: feedback_review`."
+license: MIT
 ---
 
 # HermieOS — Feedback Review

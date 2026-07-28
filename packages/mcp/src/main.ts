@@ -6,6 +6,7 @@ import { registerObjectTools } from './tools/objects.js';
 import { registerRelationshipAndSubscriptionTools } from './tools/misc.js';
 import { registerNotifyTool } from './tools/notify.js';
 import { registerRunsTool } from './tools/runs.js';
+import { registerDashboardTools } from './tools/dashboard.js';
 
 const log = createLogger();
 const port = Number(process.env.MCP_PORT ?? 3002);
@@ -15,6 +16,7 @@ registerObjectTools(registry);
 registerRelationshipAndSubscriptionTools(registry);
 registerNotifyTool(registry);
 registerRunsTool(registry);
+registerDashboardTools(registry);
 
 const app = buildMcpApp(registry);
 

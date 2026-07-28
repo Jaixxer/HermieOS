@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
 import { schema, type Database } from '@hermieos/db';
 import { getDb } from './db.js';
 
@@ -359,9 +359,7 @@ export interface ListObjectsInput {
   limit: number;
   cursor?: string;
   includeArchived?: boolean;
-}
-
-export async function listObjects(
+}export async function listObjects(
   userId: string,
   input: ListObjectsInput,
 ): Promise<{ objects: ObjectRow[]; nextCursor: string | null }> {
@@ -399,6 +397,77 @@ export async function listObjects(
     out.push(rowToObject(r, rev));
   }
   return { objects: out, nextCursor };
+}
+
+/**
+ * List objects produced by a specific scout — the UI calls these
+ * "Findings" regardless of underlying type.
+ *
+ * "Finding" is a UI concept: anything a scout produced. The DB stores
+ * different object types (opportunity, discovery, research, …) but the
+ * Scouting page shouldn't make the user think in those terms.
+ *
+ * Match priority:
+ *   1. `body->>'subscriptionId' = <scoutId>` — strict link set by
+ *      Hermes on create/update.
+ *   2. `body->>'source' = scout.target` OR
+ *      `body->>'target' = scout.target` — fallback for objects created
+ *      before subscriptionId was tracked, or whose producer didn't set
+ *      the field. The type filter is removed: the page shows
+ *      opportunities, discoveries, research, and any other type the
+ *      scout produced, each badged with its real type.
+ *
+ * Excludes archived objects. Newest first.
+ */
+export async function listScoutFindings(
+  userId: string,
+  subscriptionId: string,
+  limit = 20,
+): Promise<{ objects: ObjectRow[] }> {
+  const db = getDb();
+  const [scout] = await db
+    .select({ target: schema.subscriptions.target })
+    .from(schema.subscriptions)
+    .where(
+      and(
+        eq(schema.subscriptions.id, subscriptionId),
+        eq(schema.subscriptions.userId, userId),
+      ),
+    )
+    .limit(1);
+
+  const conditions = [
+    eq(schema.objects.userId, userId),
+    isNull(schema.objects.archivedAt),
+    // Exclude types that aren't scout output (note, collection). The
+    // object_type enum contains: project, research, discovery, decision,
+    // opportunity, learning_path, note, collection. We surface everything
+    // except note (free-form scratch) and collection (a user-curated
+    // grouping, not a finding).
+    sql`${schema.objects.type} NOT IN ('note', 'collection')`,
+    or(
+      sql`(${schema.objects.body}->>'subscriptionId')::uuid = ${subscriptionId}`,
+      scout?.target
+        ? or(
+            sql`${schema.objects.body}->>'source' = ${scout.target}`,
+            sql`${schema.objects.body}->>'target' = ${scout.target}`,
+          )
+        : sql`false`,
+    )!,
+  ];
+
+  const rows = await db
+    .select()
+    .from(schema.objects)
+    .where(and(...conditions))
+    .orderBy(desc(schema.objects.updatedAt))
+    .limit(limit);
+  const out: ObjectRow[] = [];
+  for (const r of rows) {
+    const rev = await latestRevisionNumber(db, r.id);
+    out.push(rowToObject(r, rev));
+  }
+  return { objects: out };
 }
 
 export interface SearchObjectsInput {

@@ -291,6 +291,61 @@ export const feedEvents = pgTable(
   ],
 );
 
+// --- categories (user-managed scouting buckets) ---
+
+// Color is one of: emerald, sky, purple, amber, rose, slate, teal, indigo.
+// Icons are: briefcase, trending-up, file-text, lightbulb, radar, trophy,
+// graduation-cap, dollar-sign, cpu, layers, help-circle.
+export const categoryColorEnum = pgEnum('category_color', [
+  'emerald',
+  'sky',
+  'purple',
+  'amber',
+  'rose',
+  'slate',
+  'teal',
+  'indigo',
+]);
+
+export const categoryIconEnum = pgEnum('category_icon', [
+  'briefcase',
+  'trending-up',
+  'file-text',
+  'lightbulb',
+  'radar',
+  'trophy',
+  'graduation-cap',
+  'dollar-sign',
+  'cpu',
+  'layers',
+  'help-circle',
+]);
+
+export const categories = pgTable(
+  'categories',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    color: categoryColorEnum('color').notNull().default('slate'),
+    icon: categoryIconEnum('icon').notNull().default('help-circle'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Active categories per user are unique on (user_id, lower(name)).
+    // We enforce case-insensitive uniqueness at the DB level for the
+    // active rows so the server doesn't have to.
+    unique('categories_user_name_unique').on(t.userId, t.name),
+    index('categories_user_archived_idx').on(t.userId, t.archivedAt),
+    index('categories_user_sort_idx').on(t.userId, t.sortOrder),
+  ],
+);
+
 // --- subscriptions ---
 
 export const subscriptions = pgTable(
@@ -311,12 +366,22 @@ export const subscriptions = pgTable(
     consecutiveFailures: integer('consecutive_failures').notNull().default(0),
     lastError: text('last_error'),
     status: subscriptionStatusEnum('status').notNull().default('active'),
+    // Scouting bucket. NULL for non-scout subscriptions (feedback_review,
+    // ad_hoc, etc). When set, the dashboard shows this subscription in
+    // the Scouting Inbox under that category. Replaces the old free-form
+    // `category` text column; the text column is kept for back-compat
+    // during the migration window and read by no current code.
+    categoryId: uuid('category_id').references(() => categories.id, {
+      onDelete: 'set null',
+    }),
+    category: text('category'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('subscriptions_user_status_next_idx').on(t.userId, t.status, t.nextRunAt),
     index('subscriptions_user_retry_idx').on(t.userId, t.nextRetryAt),
+    index('subscriptions_user_category_idx').on(t.userId, t.categoryId),
   ],
 );
 
@@ -418,6 +483,98 @@ export const hermesRuns = pgTable(
   ],
 );
 
+// --- tasks (Dashboard "Today's Mission") ---
+// Hermes creates and manages tasks; user marks status from the dashboard.
+// Multiple tasks can be batched and sent to hermes in a single MCP call.
+
+export const taskStatusEnum = pgEnum('task_status', [
+  'todo',
+  'in_progress',
+  'blocked',
+  'done',
+  'cancelled',
+]);
+
+export const taskCategoryEnum = pgEnum('task_category', [
+  'work',
+  'learning',
+  'research',
+  'health',
+  'admin',
+  'personal',
+  'other',
+]);
+
+export const tasks = pgTable(
+  'tasks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    notes: text('notes'),
+    category: taskCategoryEnum('category').notNull().default('other'),
+    status: taskStatusEnum('status').notNull().default('todo'),
+    priority: integer('priority').notNull().default(0),
+    dueAt: timestamp('due_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    // provenance: who set this task? user (typed in dashboard) or hermes (chat)
+    createdBy: actorEnum('created_by').notNull(),
+    // the dashboard batch that included this task, for grouping + "sent to hermes" state
+    batchId: uuid('batch_id'),
+    sentToHermesAt: timestamp('sent_to_hermes_at', { withTimezone: true }),
+    // optional link to an Object for the knowledge graph
+    objectId: uuid('object_id').references(() => objects.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('tasks_user_status_due_idx').on(t.userId, t.status, t.dueAt),
+    index('tasks_user_batch_idx').on(t.userId, t.batchId),
+    index('tasks_user_category_idx').on(t.userId, t.category),
+    index('tasks_user_archived_idx').on(t.userId, t.archivedAt),
+  ],
+);
+
+// --- upcoming (Dashboard "Upcoming") ---
+// Time-anchored personal items: visa appointments, biometrics, deadlines,
+// milestones. Hermes adds these in chat; user adds manually too.
+
+export const upcomingKindEnum = pgEnum('upcoming_kind', [
+  'appointment',
+  'deadline',
+  'milestone',
+  'reminder',
+  'event',
+]);
+
+export const upcoming = pgTable(
+  'upcoming',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    subtitle: text('subtitle'),
+    kind: upcomingKindEnum('kind').notNull().default('event'),
+    occursAt: timestamp('occurs_at', { withTimezone: true }).notNull(),
+    location: text('location'),
+    notes: text('notes'),
+    createdBy: actorEnum('created_by').notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('upcoming_user_occurs_idx').on(t.userId, t.occursAt),
+    index('upcoming_user_archived_idx').on(t.userId, t.archivedAt),
+  ],
+);
+
 // --- relations (Drizzle query helper, optional) ---
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -429,6 +586,14 @@ export const usersRelations = relations(users, ({ many }) => ({
   hermesRuns: many(hermesRuns),
   notifications: many(notifications),
   pushSubscriptions: many(pushSubscriptions),
+  tasks: many(tasks),
+  upcoming: many(upcoming),
+  categories: many(categories),
+}));
+
+export const categoriesRelations = relations(categories, ({ one, many }) => ({
+  user: one(users, { fields: [categories.userId], references: [users.id] }),
+  subscriptions: many(subscriptions),
 }));
 
 export const objectsRelations = relations(objects, ({ one, many }) => ({
@@ -455,6 +620,8 @@ export type ObjectRelationship = typeof objectRelationships.$inferSelect;
 export type FeedEvent = typeof feedEvents.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
 export type NewSubscription = typeof subscriptions.$inferInsert;
+export type Category = typeof categories.$inferSelect;
+export type NewCategory = typeof categories.$inferInsert;
 export type Notification = typeof notifications.$inferSelect;
 export type Feedback = typeof feedback.$inferSelect;
 export type HermesRun = typeof hermesRuns.$inferSelect;
@@ -462,3 +629,61 @@ export type NewHermesRun = typeof hermesRuns.$inferInsert;
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;
 export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
+export type Task = typeof tasks.$inferSelect;
+export type NewTask = typeof tasks.$inferInsert;
+export type Upcoming = typeof upcoming.$inferSelect;
+export type NewUpcoming = typeof upcoming.$inferInsert;
+
+// --- Calendar (Google Calendar sync + MCP-exposed events) ---
+
+export const googleOauthTokens = pgTable(
+  'google_oauth_tokens',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    accessToken: text('access_token').notNull(),
+    refreshToken: text('refresh_token').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    scope: text('scope').notNull().default(''),
+    email: text('email').notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+);
+
+export const calendarEvents = pgTable(
+  'calendar_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Google's event id (e.g. "<calendarId>_<eventId>"). Unique per user. */
+    externalId: text('external_id').notNull(),
+    /** Which Google calendar this came from (primary, work, …). */
+    calendarId: text('calendar_id').notNull().default('primary'),
+    title: text('title').notNull(),
+    description: text('description'),
+    location: text('location'),
+    startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+    endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
+    allDay: boolean('all_day').notNull().default(false),
+    /** Free/busy status: free, busy, tentative, outOfOffice. */
+    status: text('status').notNull().default('confirmed'),
+    attendees: jsonb('attendees').$type<Array<{ email: string; name?: string; responseStatus?: string }>>().notNull().default(sql`'[]'::jsonb`),
+    /** Free-form: htmlLink, hangoutLink, organizer, etag, etc. */
+    raw: jsonb('raw').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('calendar_events_user_external_unique').on(t.userId, t.externalId),
+    index('calendar_events_user_starts_at_idx').on(t.userId, t.startsAt),
+  ],
+);
+
+export type GoogleOauthToken = typeof googleOauthTokens.$inferSelect;
+export type NewGoogleOauthToken = typeof googleOauthTokens.$inferInsert;
+export type CalendarEvent = typeof calendarEvents.$inferSelect;
+export type NewCalendarEvent = typeof calendarEvents.$inferInsert;

@@ -160,6 +160,16 @@ export async function rotateMcpToken(userId: string): Promise<{ mcpToken: string
   return { mcpToken };
 }
 
+export async function readMcpTokenForUser(userId: string): Promise<string> {
+  const db = getDb();
+  const rows = await db
+    .select({ token: schema.users.mcpToken })
+    .from(schema.users)
+    .where(eq(schema.users.id, userId))
+    .limit(1);
+  return rows[0]?.token ?? '';
+}
+
 export async function setSchedulerEnabled(userId: string, enabled: boolean): Promise<void> {
   const db = getDb();
   await db
