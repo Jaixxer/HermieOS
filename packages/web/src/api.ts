@@ -500,8 +500,17 @@ export const api = {
     if (params.limit) sp.set('limit', String(params.limit));
     return request(`/search?${sp.toString()}`);
   },
-  recordFeedback(objectId: string, body: { kind: 'like' | 'save' | 'ignore' | 'archive' | 'suggest'; note?: string }): Promise<{ ok: true }> {
-    return request(`/objects/${objectId}/feedback`, { method: 'POST', body: JSON.stringify(body) });
+  recordFeedback(
+    objectId: string,
+    body: { kind: 'like' | 'save' | 'ignore' | 'archive' | 'suggest'; note?: string },
+  ): Promise<{ ok: true }> {
+    return request(`/objects/${objectId}/feedback`, {
+      method: 'POST',
+      body: JSON.stringify({
+        kind: body.kind,
+        payload: body.note ? { note: body.note } : undefined,
+      }),
+    });
   },
   feedbackSummary(params: { days?: number; limit?: number } = {}): Promise<{
     since: string;
@@ -533,6 +542,7 @@ export const api = {
     scope: string | null;
     expiresAt: string | null;
     configured: boolean;
+    hasUserConfiguredCredentials: boolean;
   }> {
     return request('/calendar/auth/status');
   },
@@ -581,6 +591,15 @@ export const api = {
   },
   calendarSync(body: { from?: string; to?: string } = {}): Promise<{ upserted: number; email: string }> {
     return request('/calendar/sync', { method: 'POST', body: JSON.stringify(body) });
+  },
+  googleOAuthApp(): Promise<{ clientId: string; clientSecret: string; createdAt: string } | null> {
+    return request('/google-oauth-app');
+  },
+  googleOAuthAppUpsert(body: { clientId: string; clientSecret: string }): Promise<{ clientId: string; clientSecret: string; createdAt: string }> {
+    return request('/google-oauth-app', { method: 'PUT', body: JSON.stringify(body) });
+  },
+  googleOAuthAppDelete(): Promise<{ ok: boolean }> {
+    return request('/google-oauth-app', { method: 'DELETE' });
   },
   subscriptions(status?: string): Promise<{ subscriptions: Subscription[] }> {
     const q = status ? `?status=${encodeURIComponent(status)}` : '';

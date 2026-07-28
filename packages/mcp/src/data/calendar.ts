@@ -1,6 +1,7 @@
 import { and, asc, between, eq, gte, lte } from 'drizzle-orm';
 import { schema } from '@hermieos/db';
 import { getDb } from './db.js';
+import { getGoogleOauthApp } from './google-oauth-app.js';
 
 export type GoogleCalendarEvent = {
   externalId: string;
@@ -290,6 +291,113 @@ export function resetGoogleCalendarClient(): void {
   _client = defaultGoogleCalendarClient();
 }
 
+/**
+ * Build a GoogleCalendarClient that uses the given OAuth credentials
+ * instead of env vars. Returns a client scoped to the supplied clientId/secret.
+ */
+export function createGoogleCalendarClient(
+  clientId: string,
+  clientSecret: string,
+): GoogleCalendarClient {
+  return {
+    async exchangeCode(code, redirectUri) {
+      const res = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code',
+        }).toString(),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`google oauth exchange failed: ${res.status} ${body}`);
+      }
+      const data = (await res.json()) as Record<string, unknown>;
+      return {
+        accessToken: String(data.access_token),
+        refreshToken: String(data.refresh_token),
+        expiresIn: Number(data.expires_in),
+        scope: String(data.scope ?? ''),
+        idToken: data.id_token ? String(data.id_token) : undefined,
+      };
+    },
+    async refreshToken(refreshTokenArg) {
+      const res = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          refresh_token: refreshTokenArg,
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: 'refresh_token',
+        }).toString(),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`google oauth refresh failed: ${res.status} ${body}`);
+      }
+      const data = (await res.json()) as Record<string, unknown>;
+      return {
+        accessToken: String(data.access_token),
+        expiresIn: Number(data.expires_in),
+      };
+    },
+    async listEvents(accessToken, opts) {
+      const res = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${opts.calendarId ?? 'primary'}/events?` +
+          new URLSearchParams({
+            timeMin: opts.timeMin.toISOString(),
+            timeMax: opts.timeMax.toISOString(),
+            maxResults: '250',
+            singleEvents: 'true',
+            orderBy: 'startTime',
+          }),
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+      );
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`google calendar list events failed: ${res.status} ${body}`);
+      }
+      const data = (await res.json()) as { items?: Record<string, unknown>[] };
+      return (data.items ?? []).map(googleEventToLocal).filter(notNull);
+    },
+    async getUserInfo(accessToken) {
+      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        return { email: '' };
+      }
+      const data = (await res.json()) as { email?: string };
+      return { email: data.email ?? '' };
+    },
+  };
+}
+
+/**
+ * Return the OAuth clientId/clientSecret for a given user:
+ * first try the user's saved Google OAuth app (google_oauth_apps),
+ * then fall back to server env vars, then empty strings.
+ */
+export async function getActiveGoogleCredentials(
+  userId: string,
+): Promise<{ clientId: string; clientSecret: string }> {
+  const userApp = await getGoogleOauthApp(userId);
+  if (userApp?.clientId && userApp?.clientSecret) {
+    return { clientId: userApp.clientId, clientSecret: userApp.clientSecret };
+  }
+  return {
+    clientId: process.env.GOOGLE_OAUTH_CLIENT_ID ?? '',
+    clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? '',
+  };
+}
+
 function defaultGoogleCalendarClient(): GoogleCalendarClient {
   return {
     async exchangeCode(code, redirectUri) {
@@ -427,9 +535,11 @@ export async function syncGoogleCalendar(
   if (!tokens) {
     throw new Error('google calendar not connected');
   }
+  const { clientId, clientSecret } = await getActiveGoogleCredentials(userId);
+  const userClient = createGoogleCalendarClient(clientId, clientSecret);
   // Refresh if expired
   if (tokens.expiresAt.getTime() < Date.now() + 30_000) {
-    const refreshed = await getGoogleCalendarClient().refreshToken(
+    const refreshed = await userClient.refreshToken(
       tokens.refreshToken,
     );
     const expiresAt = new Date(Date.now() + refreshed.expiresIn * 1000);
@@ -441,7 +551,7 @@ export async function syncGoogleCalendar(
       email: tokens.email,
     });
   }
-  const events = await getGoogleCalendarClient().listEvents(tokens.accessToken, {
+  const events = await userClient.listEvents(tokens.accessToken, {
     timeMin: opts.from,
     timeMax: opts.to,
   });

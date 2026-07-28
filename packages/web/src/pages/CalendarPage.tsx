@@ -11,11 +11,14 @@ import {
   Calendar as CalendarIcon,
   MapPin,
   Users,
+  Save,
+  ExternalLink,
 } from 'lucide-react';
 import { api, type CalendarEvent } from '../api';
 import { Sidebar } from '../components/Sidebar';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
+import { Input } from '../components/ui/input';
 import { Loading } from '../components/Loading';
 import { cn } from '../lib/utils';
 
@@ -234,17 +237,100 @@ function GoogleConnectButton({
   status,
   onSync,
 }: {
-  status: { connected: boolean; email: string | null; configured: boolean } | undefined;
+  status: {
+    connected: boolean;
+    email: string | null;
+    configured: boolean;
+    hasUserConfiguredCredentials: boolean;
+  } | undefined;
   onSync: () => Promise<void>;
 }): React.JSX.Element {
   const qc = useQueryClient();
   const [busy, setBusy] = React.useState(false);
+  const [setupOpen, setSetupOpen] = React.useState(false);
+  const [clientId, setClientId] = React.useState('');
+  const [clientSecret, setClientSecret] = React.useState('');
+  const [setupSaving, setSetupSaving] = React.useState(false);
+  const [setupError, setSetupError] = React.useState<string | null>(null);
+
   if (!status) return <></>;
+
+  // Not configured at all — show setup form so the user can paste their own credentials.
   if (!status.configured) {
     return (
-      <span className="text-[11px] text-text-quaternary" title="GOOGLE_OAUTH_CLIENT_ID not set on the server">
-        Google: not configured
-      </span>
+      <div className="flex items-center gap-2">
+        {!setupOpen ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setSetupOpen(true)}
+            className="gap-1.5"
+          >
+            <CalendarIcon className="w-3.5 h-3.5" />
+            Connect Google Calendar
+          </Button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Input
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder="Client ID"
+              className="w-44 h-8"
+              disabled={setupSaving}
+            />
+            <Input
+              value={clientSecret}
+              onChange={(e) => setClientSecret(e.target.value)}
+              placeholder="Client Secret"
+              className="w-44 h-8"
+              disabled={setupSaving}
+            >
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSetupOpen(false)}
+                disabled={setupSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={setupSaving || !clientId.trim() || !clientSecret.trim()}
+                onClick={async () => {
+                  setSetupSaving(true);
+                  setSetupError(null);
+                  try {
+                    await api.googleOAuthAppUpsert({
+                      clientId: clientId.trim(),
+                      clientSecret: clientSecret.trim(),
+                    });
+                    await qc.invalidateQueries({ queryKey: ['calendar', 'auth', 'status'] });
+                    setSetupOpen(false);
+                  } catch (e) {
+                    setSetupError(e instanceof Error ? e.message : 'Failed to save');
+                  } finally {
+                    setSetupSaving(false);
+                  }
+                }}
+              >
+                <Save className="w-3 h-3" />
+                Save
+              </Button>
+            </Input>
+            {setupError ? (
+              <span className="text-[11px] text-status-failed">{setupError}</span>
+            ) : null}
+          </div>
+        )}
+        <a
+          href="https://console.cloud.google.com/apis/library"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[11px] text-accent-text hover:underline"
+        >
+          Enable Calendar API <ExternalLink className="w-3 h-3 inline" />
+        </a>
+      </div>
     );
   }
   if (!status.connected) {

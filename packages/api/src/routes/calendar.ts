@@ -10,6 +10,8 @@ import {
   deleteCalendarEventById,
   getGoogleCalendarClient,
   getCalendarEventById,
+  getActiveGoogleCredentials,
+  createGoogleCalendarClient,
 } from '@hermieos/mcp/src/data/calendar.js';
 import { BadRequest, Unauthorized, sendError } from '../errors.js';
 
@@ -62,12 +64,12 @@ export async function registerCalendarRoutes(app: FastifyInstance): Promise<void
     if (!req.user) {
       return sendError(reply, new Unauthorized(), String(req.id));
     }
-    const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID ?? '';
+    const { clientId } = await getActiveGoogleCredentials(req.user.id);
     if (!clientId) {
       return sendError(
         reply,
         new BadRequest(
-          'GOOGLE_OAUTH_CLIENT_ID is not set on the server; ask the operator to configure Google OAuth before connecting calendars',
+          'Google OAuth is not configured. Go to Settings → Google Calendar to connect.',
         ),
         String(req.id),
       );
@@ -115,14 +117,15 @@ export async function registerCalendarRoutes(app: FastifyInstance): Promise<void
       );
     }
     reply.clearCookie('google_oauth_state', { path: '/' });
-    const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID ?? '';
+    const { clientId, clientSecret } = await getActiveGoogleCredentials(req.user.id);
     const redirectUri = `${req.protocol}://${req.headers.host}/calendar/auth/callback`;
-    const tokenRes = await getGoogleCalendarClient().exchangeCode(
+    const userClient = createGoogleCalendarClient(clientId, clientSecret);
+    const tokenRes = await userClient.exchangeCode(
       parsed.data.code,
       redirectUri,
     );
     const expiresAt = new Date(Date.now() + tokenRes.expiresIn * 1000);
-    const userInfo = await getGoogleCalendarClient()
+    const userInfo = await userClient
       .getUserInfo(tokenRes.accessToken)
       .catch(() => ({ email: '' }));
     await saveGoogleOauthTokens(req.user.id, {
@@ -148,12 +151,14 @@ export async function registerCalendarRoutes(app: FastifyInstance): Promise<void
       return sendError(reply, new Unauthorized(), String(req.id));
     }
     const tokens = await getGoogleOauthTokens(req.user.id);
+    const credentials = await getActiveGoogleCredentials(req.user.id);
     return {
       connected: Boolean(tokens),
       email: tokens?.email ?? null,
       scope: tokens?.scope ?? null,
       expiresAt: tokens?.expiresAt.toISOString() ?? null,
-      configured: Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID),
+      configured: Boolean(credentials.clientId),
+      hasUserConfiguredCredentials: Boolean(tokens),
     };
   });
 

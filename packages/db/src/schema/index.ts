@@ -687,3 +687,23 @@ export type GoogleOauthToken = typeof googleOauthTokens.$inferSelect;
 export type NewGoogleOauthToken = typeof googleOauthTokens.$inferInsert;
 export type CalendarEvent = typeof calendarEvents.$inferSelect;
 export type NewCalendarEvent = typeof calendarEvents.$inferInsert;
+
+// --- Per-user Google OAuth app credentials (Client ID + Secret) ---
+// Stored so users can configure their own Google Cloud credentials
+// instead of relying on a server-wide GOOGLE_OAUTH_CLIENT_ID env var.
+
+export const googleOauthApps = pgTable(
+  'google_oauth_apps',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    clientId: text('client_id').notNull(),
+    clientSecret: text('client_secret').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+);
+
+export type GoogleOauthApp = typeof googleOauthApps.$inferSelect;
+export type NewGoogleOauthApp = typeof googleOauthApps.$inferInsert;

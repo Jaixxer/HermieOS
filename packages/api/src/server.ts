@@ -21,6 +21,7 @@ import { registerRunRoutes } from './routes/runs.js';
 import { registerEventsRoutes } from './routes/events.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerCalendarRoutes } from './routes/calendar.js';
+import { registerGoogleOauthAppRoutes } from './routes/google-oauth-app.js';
 import { ApiError, sendError } from './errors.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -109,6 +110,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await registerEventsRoutes(app);
   await registerDashboardRoutes(app);
   await registerCalendarRoutes(app);
+  await registerGoogleOauthAppRoutes(app);
 
   // Serve the web client (PWA) from the built dist/ directory.
   if (existsSync(webDist)) {

@@ -44,8 +44,9 @@ export function FeedbackButtons({
   const qc = useQueryClient();
   const [busy, setBusy] = useState<FeedbackKind | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [suggestOpen, setSuggestOpen] = useState(false);
-  const [suggestText, setSuggestText] = useState('');
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteKind, setNoteKind] = useState<FeedbackKind>('suggest');
+  const [noteText, setNoteText] = useState('');
   const [archiveConfirm, setArchiveConfirm] = useState(false);
   const [lastSent, setLastSent] = useState<FeedbackKind | null>(null);
 
@@ -71,15 +72,17 @@ export function FeedbackButtons({
   }
 
   function handleClick(kind: FeedbackKind): void {
-    if (kind === 'suggest') {
-      setSuggestOpen(true);
-      return;
-    }
     if (kind === 'archive') {
       setArchiveConfirm(true);
       return;
     }
-    void send(kind);
+    if (compact) {
+      void send(kind);
+      return;
+    }
+    setNoteKind(kind);
+    setNoteText('');
+    setNoteOpen(true);
   }
 
   return (
@@ -137,33 +140,41 @@ export function FeedbackButtons({
         </div>
       ) : null}
 
-      {suggestOpen ? (
+      {noteOpen ? (
         <div className="absolute right-0 top-full mt-2 z-20 bg-surface-0 border border-border-default rounded-xl shadow-lg w-80 p-3">
           <div className="flex items-center gap-2 text-[12px] font-medium text-text-secondary mb-2">
-            <Lightbulb className="w-3.5 h-3.5 text-accent-text" />
-            What should Hermes research next?
+            <MessageSquare className="w-3.5 h-3.5 text-accent-text" />
+            {KIND_META[noteKind].label} — add a note (optional)
           </div>
           <Input
-            value={suggestText}
-            onChange={(e) => setSuggestText(e.target.value)}
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
             placeholder="e.g. follow up with the author, find similar projects…"
             className="h-10"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && noteText.trim()) {
+                void send(noteKind, noteText.trim()).then(() => {
+                  setNoteOpen(false);
+                  setNoteText('');
+                });
+              }
+            }}
           />
           <div className="flex justify-end gap-2 mt-2">
-            <Button variant="ghost" size="sm" onClick={() => setSuggestOpen(false)}>
+            <Button variant="ghost" size="sm" onClick={() => { setNoteOpen(false); setNoteText(''); }}>
               Cancel
             </Button>
             <Button
               size="sm"
-              disabled={!suggestText.trim() || busy !== null}
+              disabled={busy !== null}
               onClick={() => {
-                void send('suggest', suggestText.trim()).then(() => {
-                  setSuggestOpen(false);
-                  setSuggestText('');
+                void send(noteKind, noteText.trim() || undefined).then(() => {
+                  setNoteOpen(false);
+                  setNoteText('');
                 });
               }}
             >
-              Send
+              {compact ? 'Send' : 'Send'}
             </Button>
           </div>
         </div>
