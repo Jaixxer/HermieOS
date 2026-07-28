@@ -275,53 +275,52 @@ function GoogleConnectButton({
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
               placeholder="Client ID"
-              className="w-44 h-8"
+              className="w-40 h-8"
               disabled={setupSaving}
             />
             <Input
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
               placeholder="Client Secret"
-              className="w-44 h-8"
+              className="w-40 h-8"
+              disabled={setupSaving}
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSetupOpen(false)}
               disabled={setupSaving}
             >
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setSetupOpen(false)}
-                disabled={setupSaving}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                disabled={setupSaving || !clientId.trim() || !clientSecret.trim()}
-                onClick={async () => {
-                  setSetupSaving(true);
-                  setSetupError(null);
-                  try {
-                    await api.googleOAuthAppUpsert({
-                      clientId: clientId.trim(),
-                      clientSecret: clientSecret.trim(),
-                    });
-                    await qc.invalidateQueries({ queryKey: ['calendar', 'auth', 'status'] });
-                    setSetupOpen(false);
-                  } catch (e) {
-                    setSetupError(e instanceof Error ? e.message : 'Failed to save');
-                  } finally {
-                    setSetupSaving(false);
-                  }
-                }}
-              >
-                <Save className="w-3 h-3" />
-                Save
-              </Button>
-            </Input>
-            {setupError ? (
-              <span className="text-[11px] text-status-failed">{setupError}</span>
-            ) : null}
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={setupSaving || !clientId.trim() || !clientSecret.trim()}
+              onClick={async () => {
+                setSetupSaving(true);
+                setSetupError(null);
+                try {
+                  await api.googleOAuthAppUpsert({
+                    clientId: clientId.trim(),
+                    clientSecret: clientSecret.trim(),
+                  });
+                  await qc.invalidateQueries({ queryKey: ['calendar', 'auth', 'status'] });
+                  setSetupOpen(false);
+                } catch (e) {
+                  setSetupError(e instanceof Error ? e.message : 'Failed to save');
+                } finally {
+                  setSetupSaving(false);
+                }
+              }}
+            >
+              <Save className="w-3 h-3" />
+              Save
+            </Button>
           </div>
         )}
+        {setupError ? (
+          <span className="text-[11px] text-status-failed">{setupError}</span>
+        ) : null}
         <a
           href="https://console.cloud.google.com/apis/library"
           target="_blank"

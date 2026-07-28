@@ -1,4 +1,4 @@
-import { and, asc, between, eq, gte, lte } from 'drizzle-orm';
+import { and, asc, between, eq, excluded, gte, lte } from 'drizzle-orm';
 import { schema } from '@hermieos/db';
 import { getDb } from './db.js';
 import { getGoogleOauthApp } from './google-oauth-app.js';
@@ -198,6 +198,59 @@ export async function upsertCalendarEvent(
     .returning();
   if (!row) throw new Error('calendar_events upsert failed');
   return rowToEvent(row);
+}
+
+/**
+ * Batch upsert calendar events. Much faster than calling
+ * upsertCalendarEvent in a loop for each event.
+ */
+export async function upsertCalendarEventsBatch(
+  userId: string,
+  events: GoogleCalendarEvent[],
+): Promise<number> {
+  if (events.length === 0) return 0;
+  const db = getDb();
+  const now = new Date();
+  await db
+    .insert(schema.calendarEvents)
+    .values(
+      events.map((e) => ({
+        userId,
+        externalId: e.externalId,
+        calendarId: e.calendarId,
+        title: e.title,
+        description: e.description,
+        location: e.location,
+        startsAt: e.startsAt,
+        endsAt: e.endsAt,
+        allDay: e.allDay,
+        status: e.status,
+        attendees: e.attendees,
+        raw: e.raw,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [
+        schema.calendarEvents.userId,
+        schema.calendarEvents.externalId,
+      ],
+      set: {
+        title: schema.calendarEvents.title,
+        description: schema.calendarEvents.description,
+        location: schema.calendarEvents.location,
+        startsAt: schema.calendarEvents.startsAt,
+        endsAt: schema.calendarEvents.endsAt,
+        allDay: schema.calendarEvents.allDay,
+        status: schema.calendarEvents.status,
+        attendees: schema.calendarEvents.attendees,
+        raw: schema.calendarEvents.raw,
+        updatedAt: now,
+      },
+    })
+    .execute();
+  return events.length;
 }
 
 export async function deleteCalendarEventByExternalId(
@@ -555,8 +608,6 @@ export async function syncGoogleCalendar(
     timeMin: opts.from,
     timeMax: opts.to,
   });
-  for (const event of events) {
-    await upsertCalendarEvent(userId, event);
-  }
-  return { upserted: events.length, email: tokens.email };
+  const upserted = await upsertCalendarEventsBatch(userId, events);
+  return { upserted, email: tokens.email };
 }
