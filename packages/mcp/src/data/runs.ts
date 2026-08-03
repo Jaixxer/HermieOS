@@ -1,4 +1,5 @@
 import { and, avg, count, desc, eq, gte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { schema } from '@hermieos/db';
 import { getDb } from './db.js';
 
@@ -15,6 +16,46 @@ export interface HermesRunRow {
   finishedAt: Date | null;
   error: string | null;
   createdAt: Date;
+}
+
+/**
+ * Create a run row in `dispatched` state. The run tracker (scheduler
+ * process) settles it after the gateway reports a terminal state.
+ * Used by the API for immediate, user-triggered runs (finding
+ * follow-ups); the scheduler has its own local helper with the same
+ * shape.
+ */
+export async function createRun(input: {
+  userId: string;
+  kind: schema.HermesRun['kind'];
+  subscriptionId?: string;
+  prompt: string;
+  attempt?: number;
+}): Promise<{ id: string }> {
+  const db = getDb();
+  const id = randomUUID();
+  await db.insert(schema.hermesRuns).values({
+    id,
+    userId: input.userId,
+    kind: input.kind,
+    subscriptionId: input.subscriptionId ?? null,
+    prompt: input.prompt,
+    attempt: input.attempt ?? 1,
+    status: 'dispatched',
+  });
+  return { id };
+}
+
+export async function markRunDispatched(
+  runId: string,
+  hermesRunId: string,
+  now: Date = new Date(),
+): Promise<void> {
+  const db = getDb();
+  await db
+    .update(schema.hermesRuns)
+    .set({ hermesRunId, status: 'running', startedAt: now })
+    .where(eq(schema.hermesRuns.id, runId));
 }
 
 function rowToRun(row: schema.HermesRun): HermesRunRow {

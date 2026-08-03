@@ -57,6 +57,12 @@ export class TooManyRequests extends ApiError {
   }
 }
 
+export class ServiceUnavailable extends ApiError {
+  constructor(message = 'service_unavailable') {
+    super('service_unavailable', 503, message);
+  }
+}
+
 export class InternalError extends ApiError {
   constructor(message = 'internal_error') {
     super('internal_error', 500, message);

@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { schema } from '@hermieos/db';
 import { CADENCE_INTERVALS_MS } from '@hermieos/domain';
 import { getDb } from './db.js';
@@ -146,6 +146,23 @@ export async function listSubscriptions(
     .orderBy(desc(schema.subscriptions.createdAt))
     .limit(limit);
   return { subscriptions: rows.map(rowToSubscription) };
+}
+
+/**
+ * Fetch a single subscription by id, scoped to the user. Returns
+ * null when the id doesn't exist or belongs to another user.
+ */
+export async function getSubscription(
+  userId: string,
+  id: string,
+): Promise<SubscriptionRow | null> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.subscriptions)
+    .where(and(eq(schema.subscriptions.id, id), eq(schema.subscriptions.userId, userId)))
+    .limit(1);
+  return row ? rowToSubscription(row) : null;
 }
 
 export async function archiveSubscription(

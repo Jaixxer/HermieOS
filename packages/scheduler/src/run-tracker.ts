@@ -22,17 +22,18 @@
  * shares the DB and the single-instance advisory lock. The two
  * tasks do not contend (different SQL tables).
  */
-import { and, eq, inArray, isNull, isNotNull, lte, sql } from 'drizzle-orm';
+import { and, inArray, isNull, isNotNull, lte } from 'drizzle-orm';
 import { RETRY_BACKOFFS_MS } from '@hermieos/domain';
 import { schema } from '@hermieos/db';
 import {
   type HermesClient,
   isSuccessRunStatus,
   isTerminalRunStatus,
-} from './hermes-client.js';
+} from '@hermieos/gateway';
 import {
   emitRunFinishedFeedEvent,
   getDb,
+  getSubscriptionById,
   markRunCancelled,
   markRunFailed,
   markRunSucceeded,
@@ -212,6 +213,31 @@ export async function trackRunsOnce(
         await markRunSucceeded(run.id);
         if (run.subscriptionId) {
           await markSubscriptionSucceeded(run.subscriptionId, new Date(now));
+          // Every successful scout run surfaces in the Feed — including
+          // no-op runs ("Watched <target>. No new findings.") so the
+          // user can see the scout actually ran. The body is the
+          // agent's own terse summary when Hermes produced one.
+          const sub = await getSubscriptionById(run.subscriptionId);
+          if (sub) {
+            const output = status.output?.trim();
+            const body = output
+              ? output.slice(0, 500)
+              : `Watched ${sub.target}. Run completed with no summary.`;
+            await db.insert(schema.feedEvents).values({
+              userId: run.userId,
+              kind: 'task_finished',
+              objectId: null,
+              title: `Scout "${sub.name}" ran`,
+              body,
+              payload: {
+                runId: run.id,
+                subscriptionId: run.subscriptionId,
+                hermesRunId: run.hermesRunId,
+                status: 'succeeded',
+                output: output ?? null,
+              },
+            });
+          }
         }
         summary.runsSettled += 1;
       } else if (status.status === 'failed') {

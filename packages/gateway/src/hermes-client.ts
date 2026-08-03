@@ -22,8 +22,8 @@ export interface RunDispatchRequest {
   hermieosRunId: string;
   /** Our user_id. Drives Honcho memory scoping. */
   userId: string;
-  /** Subscription / feedback_review / system_notify. */
-  kind: 'subscription' | 'feedback_review' | 'system_notify';
+  /** Subscription / feedback_review / system_notify / ad_hoc. */
+  kind: 'subscription' | 'feedback_review' | 'system_notify' | 'ad_hoc';
   /** The actual instruction. */
   input: string;
   /** Optional layered system-prompt prefix. */
@@ -85,6 +85,49 @@ export interface HermesCapabilities {
 export type HermesClientError =
   | { kind: 'http'; status: number; body: string; retryable: boolean }
   | { kind: 'network'; message: string; retryable: boolean };
+
+export interface HermesSession {
+  id: string;
+  source?: string | null;
+  user_id?: string | null;
+  model?: string | null;
+  title?: string | null;
+  preview?: string | null;
+  message_count?: number;
+  tool_call_count?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  last_active?: number | null;
+  started_at?: number;
+}
+
+export interface HermesMessage {
+  id: string | number;
+  session_id: string;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string | null;
+  tool_call_id?: string | null;
+  tool_calls?: unknown[];
+  tool_name?: string | null;
+  timestamp?: number | null;
+  token_count?: number | null;
+  finish_reason?: string | null;
+  reasoning?: string | null;
+}
+
+export interface HermesMessageList {
+  object: 'list';
+  session_id: string;
+  data: HermesMessage[];
+}
+
+export interface HermesChatResult {
+  object: 'hermes.session.chat.completion';
+  session_id: string;
+  message: { role: 'assistant'; content: string };
+  usage?: Record<string, unknown>;
+  runtime?: Record<string, unknown>;
+}
 
 export class HermesHttpError extends Error {
   readonly status: number;
@@ -238,6 +281,112 @@ export class HermesClient {
     return body as HermesCapabilities;
   }
 
+  // ==================================================================
+  // Sessions + chat (the /api/sessions surface)
+  //
+  // Sessions are owned by the Hermes gateway's own store. HermieOS
+  // does not mirror them; it references them by id (e.g. a finding
+  // conversation lives at `finding-<objectId>`).
+  // ==================================================================
+
+  /**
+   * List persisted sessions. `source` filters by gateway/source
+   * (api_server, cli, telegram, …).
+   */
+  async listSessions(params?: {
+    limit?: number;
+    offset?: number;
+    source?: string;
+  }): Promise<{ data: HermesSession[] }> {
+    const search = new URLSearchParams();
+    if (params?.limit !== undefined) search.set('limit', String(params.limit));
+    if (params?.offset !== undefined) search.set('offset', String(params.offset));
+    if (params?.source) search.set('source', params.source);
+    const qs = search.toString();
+    const url = `${this.baseUrl}/api/sessions${qs ? `?${qs}` : ''}`;
+    return (await this.requestWithRetries(url, { method: 'GET', headers: this.headers() })) as {
+      data: HermesSession[];
+    };
+  }
+
+  /** Fetch one session's metadata. */
+  async getSession(sessionId: string): Promise<{ object: string; session: HermesSession }> {
+    const url = `${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}`;
+    return (await this.requestWithRetries(url, { method: 'GET', headers: this.headers() })) as {
+      object: string;
+      session: HermesSession;
+    };
+  }
+
+  /** Read all messages for a session. */
+  async getMessages(sessionId: string): Promise<HermesMessageList> {
+    const url = `${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages`;
+    return (await this.requestWithRetries(url, { method: 'GET', headers: this.headers() })) as HermesMessageList;
+  }
+
+  /**
+   * Create an empty session. `id` is honored when supplied — HermieOS
+   * uses deterministic ids (`finding-<objectId>`) so a conversation
+   * resumes without a lookup table. Some Hermes versions reject
+   * `title` on create; callers should fall back to renameSession.
+   */
+  async createSession(body: {
+    id?: string;
+    model?: string;
+    source?: string;
+    title?: string;
+  }): Promise<{ object: string; session: HermesSession }> {
+    const url = `${this.baseUrl}/api/sessions`;
+    return (await this.requestWithRetries(url, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(body),
+    })) as { object: string; session: HermesSession };
+  }
+
+  /** Rename a session. Empty title clears it. */
+  async renameSession(
+    sessionId: string,
+    title: string,
+  ): Promise<{ object: string; session: HermesSession }> {
+    const url = `${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}`;
+    return (await this.requestWithRetries(url, {
+      method: 'PATCH',
+      headers: this.headers(),
+      body: JSON.stringify({ title }),
+    })) as { object: string; session: HermesSession };
+  }
+
+  /** Delete a session. */
+  async deleteSession(sessionId: string): Promise<unknown> {
+    const url = `${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}`;
+    return this.requestWithRetries(url, { method: 'DELETE', headers: this.headers() });
+  }
+
+  /**
+   * Send one user turn to a session and get the assistant reply.
+   *
+   * Deliberately NO retry on transient errors: a retried POST could
+   * double-send the user's message. The caller surfaces the error and
+   * the client re-sends on user action.
+   */
+  async chat(
+    sessionId: string,
+    body: {
+      message: string;
+      model?: string;
+      system_message?: string;
+      model_options?: Record<string, unknown>;
+    },
+  ): Promise<HermesChatResult> {
+    const url = `${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/chat`;
+    return (await this.requestOnce(url, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(body),
+    })) as HermesChatResult;
+  }
+
   private async requestWithRetries(
     url: string,
     init: { method: string; headers: Record<string, string>; body?: string },
@@ -292,7 +441,7 @@ export class HermesClient {
 }
 
 export function buildRunInstruction(
-  kind: 'subscription' | 'feedback_review' | 'system_notify',
+  kind: 'subscription' | 'feedback_review' | 'system_notify' | 'ad_hoc',
   body: string,
 ): string {
   return `[kind=${kind}]\n${body}`;

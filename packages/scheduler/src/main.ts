@@ -1,4 +1,4 @@
-import { HermesClient } from './hermes-client.js';
+import { HermesClient } from '@hermieos/gateway';
 import { schedule, tickOnce } from './tick.js';
 import { startRunTracker } from './run-tracker.js';
 import { createLogger } from './logger.js';

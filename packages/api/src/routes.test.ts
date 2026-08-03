@@ -15,6 +15,7 @@ let bobCookie: string;
 let bobId: string;
 
 async function cleanup(): Promise<void> {
+  await db.execute(sql`delete from notifications where user_id in (select id from users where email like '%@api-test.local')`);
   await db.execute(sql`delete from feed_events where user_id in (select id from users where email like '%@api-test.local')`);
   await db.execute(sql`delete from feedback where user_id in (select id from users where email like '%@api-test.local')`);
   await db.execute(sql`delete from hermes_runs where user_id in (select id from users where email like '%@api-test.local')`);
@@ -363,5 +364,157 @@ describe('runs API', () => {
     const r = await call('GET', '/runs', { cookie: aliceCookie });
     expect(r.status).toBe(200);
     expect((r.body.runs as Array<unknown>).length).toBe(0);
+  });
+});
+
+describe('mission analytics (GET /tasks/analytics)', () => {  it('returns zeros when the user has no tasks', async () => {
+    const r = await call('GET', '/tasks/analytics', { cookie: aliceCookie });
+    expect(r.status).toBe(200);
+    const body = r.body as {
+      today: { total: number; completed: number; pending: number; overdue: number; completionRate: number };
+      deferredTomorrow: number;
+      last7Days: Array<{ date: string; created: number; completed: number }>;
+    };
+    expect(body.today.total).toBe(0);
+    expect(body.today.completed).toBe(0);
+    expect(body.deferredTomorrow).toBe(0);
+    expect(body.last7Days.length).toBe(7);
+  });
+
+  it('counts completed, pending, overdue, and deferred tasks', async () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    // Completed today.
+    await db.insert(schema.tasks).values({
+      userId: aliceId,
+      title: 'done today',
+      category: 'work',
+      status: 'done',
+      completedAt: now,
+      createdBy: 'user',
+    });
+    // Pending (due today, not done).
+    await db.insert(schema.tasks).values({
+      userId: aliceId,
+      title: 'due today',
+      category: 'work',
+      status: 'todo',
+      dueAt: today,
+      createdBy: 'user',
+    });
+    // Overdue (due yesterday, not done).
+    await db.insert(schema.tasks).values({
+      userId: aliceId,
+      title: 'overdue',
+      category: 'health',
+      status: 'todo',
+      dueAt: yesterday,
+      createdBy: 'user',
+    });
+    // Deferred to tomorrow.
+    await db.insert(schema.tasks).values({
+      userId: aliceId,
+      title: 'tomorrow task',
+      category: 'learning',
+      status: 'todo',
+      dueAt: tomorrow,
+      createdBy: 'user',
+    });
+    // Bob's task — must not leak into alice's analytics.
+    await db.insert(schema.tasks).values({
+      userId: bobId,
+      title: 'bob task',
+      category: 'other',
+      status: 'todo',
+      dueAt: today,
+      createdBy: 'user',
+    });
+
+    const r = await call('GET', '/tasks/analytics', { cookie: aliceCookie });
+    expect(r.status).toBe(200);
+    const body = r.body as {
+      today: { total: number; completed: number; pending: number; overdue: number; completionRate: number };
+      deferredTomorrow: number;
+    };
+    expect(body.today.total).toBe(3); // done today + due today + overdue
+    expect(body.today.completed).toBe(1);
+    expect(body.today.pending).toBe(2);
+    expect(body.today.overdue).toBe(1);
+    expect(body.today.completionRate).toBeCloseTo(1 / 3, 5);
+    expect(body.deferredTomorrow).toBe(1);
+  });
+});
+
+describe('notifications API', () => {
+  it('returns an empty list for a user with no notifications', async () => {
+    const r = await call('GET', '/notifications', { cookie: aliceCookie });
+    expect(r.status).toBe(200);
+    expect((r.body.notifications as Array<unknown>).length).toBe(0);
+    expect(r.body.unread).toBe(0);
+  });
+
+  it('lists notifications newest first and counts unread', async () => {
+    await db.insert(schema.notifications).values({
+      userId: aliceId,
+      title: 'First notification',
+      message: 'older',
+      priority: 'normal',
+    });
+    await db.insert(schema.notifications).values({
+      userId: aliceId,
+      title: 'Second notification',
+      message: 'newer',
+      priority: 'high',
+      readAt: new Date(),
+    });
+    // Bob's notification must not leak.
+    await db.insert(schema.notifications).values({
+      userId: bobId,
+      title: 'Bob private',
+      message: 'nope',
+      priority: 'low',
+    });
+
+    const r = await call('GET', '/notifications', { cookie: aliceCookie });
+    expect(r.status).toBe(200);
+    const list = r.body.notifications as Array<{ title: string; createdAt: string }>;
+    expect(list.map((n) => n.title)).toEqual(['Second notification', 'First notification']);
+    expect(r.body.unread).toBe(1);
+
+    // unread-only filter
+    const u = await call('GET', '/notifications?unreadOnly=true', { cookie: aliceCookie });
+    const unreadList = (u.body.notifications as Array<{ title: string }>).map((n) => n.title);
+    expect(unreadList).toEqual(['First notification']);
+  });
+
+  it('marks a single notification read and marks all read', async () => {
+    const [n1] = await db
+      .insert(schema.notifications)
+      .values({ userId: aliceId, title: 'A', message: 'x', priority: 'normal' })
+      .returning({ id: schema.notifications.id });
+    await db.insert(schema.notifications).values({
+      userId: aliceId,
+      title: 'B',
+      message: 'y',
+      priority: 'low',
+    });
+
+    const one = await call('POST', `/notifications/${n1!.id}/read`, { cookie: aliceCookie });
+    expect(one.status).toBe(200);
+
+    const after = await call('GET', '/notifications', { cookie: aliceCookie });
+    expect(after.body.unread).toBe(1);
+
+    const all = await call('POST', '/notifications/read', { cookie: aliceCookie });
+    expect(all.status).toBe(200);
+    expect(all.body.updated).toBe(1);
+
+    const final = await call('GET', '/notifications/unread-count', { cookie: aliceCookie });
+    expect(final.body.unread).toBe(0);
   });
 });

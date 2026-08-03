@@ -3,11 +3,11 @@
 A personal operating system around Hermes Agent. The long-running agent is the brain; HermieOS is the persistence, presentation, and tool surface around it.
 
 - Spec: [`SPEC.md`](./SPEC.md)
-- Docs: [`docs/`](./docs/) — start with [decisions.md](./docs/decisions.md) and [roadmap.md](./docs/roadmap.md)
+- Docs: [`docs/`](./docs/) — **start with [docs/guide.md](./docs/guide.md)** (the codebase map for agents), then [decisions.md](./docs/decisions.md) and [roadmap.md](./docs/roadmap.md)
 
 ## Status
 
-MVP feature-complete (Phases 0–4 done; Phase 5 hardening in progress). Hermes is wired up via a "fake Hermes" stand-in. The full loop runs locally with `pnpm demo`.
+Feature-complete through Phase 10.6 + Phase 11: dashboard redesign (Mission / Opportunities / Knowledge pages), notifications pipeline with native OS notifications in the desktop app, knowledge graph + settings improvements, two-way Google Calendar sync — plus finding conversations: a dedicated discuss page per finding, immediate follow-ups (chat or tracked background runs) that record raw feedback, a snap-scrolling findings deck, and scout self-tuning via MCP (Hermes can retune its own scouts; every run is visible in the Feed). All wired to a real Hermes instance (or the "fake Hermes" stand-in for the demo loop).
 
 ## Prereqs
 
@@ -87,14 +87,18 @@ pnpm db:studio
 pnpm db:seed
 ```
 
-## Web client
+## Web client + desktop app
 
-`packages/web` is a Vite + React 19 + TanStack Query + Tailwind v4 app.
+`packages/web` is a Vite + React 19 + TanStack Query + Tailwind v4 app, wrapped in an
+Electron shell for the desktop experience.
 
 ```bash
 pnpm --filter @hermieos/web dev   # http://127.0.0.1:5173
 pnpm --filter @hermieos/web build
 pnpm --filter @hermieos/web e2e   # Playwright
+
+# desktop AppImage (after pnpm build)
+cd packages/web && npx electron-builder --linux AppImage
 ```
 
 The web client expects the API on `:3001`. In dev, the Vite dev server proxies `/api/*` to `http://localhost:3001`.
@@ -104,17 +108,18 @@ The web client expects the API on `:3001`. In dev, the Vite dev server proxies `
 ```
 HermieOs/
 ├── SPEC.md
-├── docs/                   # design + roadmap + decisions
-├── scripts/                # demo, seed
+├── docs/                   # design + roadmap + decisions + codebase guide
 ├── packages/
-│   ├── api/                # user-facing HTTP + SSE
-│   ├── mcp/                # MCP server Hermes talks to
-│   ├── scheduler/          # dumb cron loop
+│   ├── api/                # user-facing HTTP + SSE (Fastify, :3001)
+│   ├── mcp/                # MCP server Hermes talks to (:3002) + THE DATA LAYER
+│   ├── scheduler/          # dumb cron loop (subscriptions, feedback review)
 │   ├── db/                 # Drizzle schema + migrations
-│   ├── domain/             # shared zod schemas + types
+│   ├── domain/             # shared zod schemas + constants
 │   ├── cache/              # in-memory TTL cache
-│   └── web/                # React app (PWA-capable)
-├── docker-compose.yml      # Postgres + api + mcp + scheduler + fake-hermes
+│   ├── scripts/            # demo, e2e phase scripts, hermes tooling
+│   ├── skills/             # hermes skill definitions
+│   └── web/                # React app (PWA-capable) + Electron shell
+├── docker-compose.yml      # Postgres + api + mcp + scheduler + fake-hermes (+ real hermes opt-in)
 ├── Dockerfile              # shared image for api/mcp/scheduler
 ├── package.json            # workspace root
 └── pnpm-workspace.yaml
@@ -122,23 +127,15 @@ HermieOs/
 
 ## How to use this repo
 
-- **`docs/roadmap.md`** is the high-level plan. Each phase has an exit criterion.
-- **`docs/decisions.md`** records the locked design choices.
-- **`docs/data-model.md`** is the schema spec.
-- **`docs/hermes-integration.md`** is the wiring for a real Hermes install.
-- **`SPEC.md`** is the full product spec.
+- **`docs/guide.md`** — the codebase map: layers, where things live, key flows, testing, gotchas. Read this first (humans and agents alike).
+- **`docs/roadmap.md`** — the high-level plan. Each phase has an exit criterion.
+- **`docs/decisions.md`** — records the locked design choices.
+- **`docs/data-model.md`** — the schema spec (all 18 tables).
+- **`docs/mcp-tools.md`** — the full tool surface Hermes can call.
+- **`docs/hermes-integration.md`** — the wiring for a real Hermes install.
+- **`docs/follow-ups.md`** — finding conversations, immediate follow-ups, the findings deck, scout self-tuning.
+- **`SPEC.md`** — the full product spec.
 
-## MVP exit criterion
+## Status table
 
-> A developer can clone, run `docker compose up -d && pnpm db:migrate && pnpm demo`, and see the full loop in under 10 minutes. The pause flag stops the scheduler. The feed updates live. Errors are structured. CI green. No known P0 bugs.
-
-Verify locally:
-
-```bash
-docker compose up -d postgres
-pnpm install
-pnpm db:migrate
-pnpm test:run
-pnpm typecheck
-pnpm demo
-```
+See `docs/roadmap.md` → "Tracking" for the phase status table. Current state: Phases 0–10.6 + 11 (finding conversations, immediate follow-ups, findings deck, scout self-tuning) are done.

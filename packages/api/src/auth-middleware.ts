@@ -40,29 +40,46 @@ export async function getSessionUser(req: FastifyRequest): Promise<SessionUser |
     const match = /^Bearer\s+(.+)$/i.exec(authHeader);
     const bearer = match?.[1];
     if (bearer) {
-      req.authViaToken = true;
-      // Try session token first
-      const session = await findSessionByToken(bearer);
-      if (session) {
-        req.sessionToken = bearer;
-        void touchSession(bearer).catch(() => undefined);
-        return {
-          id: session.user.id,
-          email: session.user.email,
-          displayName: session.user.displayName,
-          mcpToken: session.user.mcpToken,
-          schedulerEnabled: session.user.schedulerEnabled,
-        };
-      }
-      // Fall back to MCP token
-      const user = await findUserByMCPToken(bearer);
-      if (user) {
-        req.sessionToken = bearer;
-        return user;
-      }
+      const user = await resolveBearerToken(req, bearer);
+      if (user) return user;
     }
   }
 
+  // 3. SSE fallback: EventSource cannot set the Authorization header,
+  // so the web client passes the bearer token as ?token= on /events.
+  const q = req.query as { token?: string };
+  if (q.token) {
+    const user = await resolveBearerToken(req, q.token);
+    if (user) return user;
+  }
+
+  return null;
+}
+
+async function resolveBearerToken(
+  req: FastifyRequest,
+  bearer: string,
+): Promise<SessionUser | null> {
+  req.authViaToken = true;
+  // Try session token first
+  const session = await findSessionByToken(bearer);
+  if (session) {
+    req.sessionToken = bearer;
+    void touchSession(bearer).catch(() => undefined);
+    return {
+      id: session.user.id,
+      email: session.user.email,
+      displayName: session.user.displayName,
+      mcpToken: session.user.mcpToken,
+      schedulerEnabled: session.user.schedulerEnabled,
+    };
+  }
+  // Fall back to MCP token
+  const user = await findUserByMCPToken(bearer);
+  if (user) {
+    req.sessionToken = bearer;
+    return user;
+  }
   return null;
 }
 

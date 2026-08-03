@@ -132,3 +132,51 @@ describe('HermesClient — session isolation', () => {
     expect(rec).toBeDefined();
   });
 });
+
+describe('HermesClient — sessions + chat', () => {
+  it('createSession honors a deterministic id and getSession reads it back', async () => {
+    const created = await client.createSession({ id: 'finding-obj-1', title: 'ESP32 paper', source: 'api_server' });
+    expect(created.session.id).toBe('finding-obj-1');
+    const got = await client.getSession('finding-obj-1');
+    expect(got.session.id).toBe('finding-obj-1');
+  });
+
+  it('createSession with an existing id returns 409 (resume semantics)', async () => {
+    await client.createSession({ id: 'finding-dup' });
+    await expect(client.createSession({ id: 'finding-dup' })).rejects.toThrow(/409|already exists/i);
+  });
+
+  it('chat posts a user turn and records the assistant reply in messages', async () => {
+    await client.createSession({ id: 'finding-chat-1' });
+    const reply = await client.chat('finding-chat-1', { message: 'summarize this paper' });
+    expect(reply.message.role).toBe('assistant');
+    expect(reply.message.content).toBe('echo: summarize this paper');
+    const msgs = await client.getMessages('finding-chat-1');
+    expect(msgs.data).toHaveLength(2);
+    expect(msgs.data[0]?.role).toBe('user');
+    expect(msgs.data[1]?.role).toBe('assistant');
+  });
+
+  it('chat on a missing session surfaces the 404', async () => {
+    await expect(client.chat('finding-nope', { message: 'hi' })).rejects.toThrow(/404|not found/i);
+  });
+
+  it('renameSession updates the title; listSessions reflects the source filter', async () => {
+    await client.createSession({ id: 'finding-rename', source: 'api_server' });
+    await client.renameSession('finding-rename', 'Renamed');
+    const got = await client.getSession('finding-rename');
+    expect(got.session.title).toBe('Renamed');
+
+    const all = await client.listSessions({ source: 'api_server', limit: 50 });
+    const ids = all.data.map((s) => s.id);
+    expect(ids).toContain('finding-rename');
+    const none = await client.listSessions({ source: 'telegram' });
+    expect(none.data.some((s) => s.id === 'finding-rename')).toBe(false);
+  });
+
+  it('deleteSession removes the session', async () => {
+    await client.createSession({ id: 'finding-del' });
+    await client.deleteSession('finding-del');
+    await expect(client.getSession('finding-del')).rejects.toThrow(/404|not found/i);
+  });
+});

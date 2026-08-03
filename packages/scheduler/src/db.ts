@@ -82,6 +82,26 @@ export async function listActiveUsers(): Promise<string[]> {
   return rows.map((r) => r.id);
 }
 
+/**
+ * Fetch a single subscription row by id (any user — callers scope the
+ * lookup themselves; the run tracker uses it to attribute feed events).
+ */
+export async function getSubscriptionById(
+  subscriptionId: string,
+): Promise<{ id: string; name: string; target: string } | null> {
+  const db = getDb();
+  const [row] = await db
+    .select({
+      id: schema.subscriptions.id,
+      name: schema.subscriptions.name,
+      target: schema.subscriptions.target,
+    })
+    .from(schema.subscriptions)
+    .where(eq(schema.subscriptions.id, subscriptionId))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function markSubscriptionSucceeded(
   subscriptionId: string,
   now: Date = new Date(),

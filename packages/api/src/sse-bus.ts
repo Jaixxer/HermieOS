@@ -9,7 +9,7 @@
  * Future: replace with LISTEN/NOTIFY for push-from-DB, or a Redis
  * pub/sub for multi-process.
  */
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { createDatabase, schema, type Database } from '@hermieos/db';
 
 let _db: Database | null = null;
@@ -44,8 +44,18 @@ export interface StreamedRunUpdate {
   error: string | null;
 }
 
+export interface StreamedNotification {
+  id: string;
+  objectId: string | null;
+  title: string;
+  body: string;
+  priority: string;
+  createdAt: string;
+}
+
 export type SseEvent =
   | { type: 'feed'; event: StreamedFeedEvent }
+  | { type: 'notification'; event: StreamedNotification }
   | { type: 'run'; event: StreamedRunUpdate };
 
 const POLL_MS = Number(process.env.SSE_POLL_MS ?? 1000);
@@ -65,6 +75,7 @@ export function openEventStream(
   lastEventId?: string,
 ): SseClientHandle {
   let lastFeedId = lastEventId ?? '';
+  let lastNotificationId = '';
   let cancelled = false;
   const db = getDb();
 
@@ -99,6 +110,36 @@ export function openEventStream(
           },
         });
         lastFeedId = row.id;
+      }
+
+      // New notifications (created via notify_user) — lets clients
+      // show in-app toasts + update the bell without polling.
+      const notifRows = await db
+        .select()
+        .from(schema.notifications)
+        .where(
+          and(
+            eq(schema.notifications.userId, userId),
+            lastNotificationId
+              ? sql`${schema.notifications.id} > ${lastNotificationId}::uuid`
+              : sql`true`,
+          ),
+        )
+        .orderBy(sql`${schema.notifications.id} asc`)
+        .limit(50);
+      for (const row of notifRows) {
+        handlers.onEvent({
+          type: 'notification',
+          event: {
+            id: row.id,
+            objectId: row.objectId,
+            title: row.title,
+            body: row.message,
+            priority: row.priority,
+            createdAt: row.createdAt.toISOString(),
+          },
+        });
+        lastNotificationId = row.id;
       }
     } catch (err) {
       handlers.onError?.(err instanceof Error ? err : new Error(String(err)));

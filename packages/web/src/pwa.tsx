@@ -41,15 +41,16 @@ export function usePwa(): PwaState {
   React.useEffect(() => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     const sw = navigator.serviceWorker;
-    if (!sw.controller) return; // Wait for SW to activate
-    setPushSupported(true);
-
+    // Wait for the service worker to be ready (it may register after
+    // mount). Don't bail on `!sw.controller` — that only means the page
+    // hasn't been claimed yet.
     sw.ready
-      .then((reg) => reg.pushManager.getSubscription())
-      .then((sub) => {
+      .then(async (reg) => {
+        setPushSupported(true);
+        const sub = await reg.pushManager.getSubscription();
         setPushSubscribed(!!sub);
       })
-      .catch(() => { /* not supported */ });
+      .catch(() => { /* push not supported */ });
   }, []);
 
   return {
@@ -65,7 +66,6 @@ export function usePwa(): PwaState {
     },
     async subscribeToPush(): Promise<void> {
       const sw = navigator.serviceWorker;
-      if (!sw.controller) return;
       const reg = await sw.ready;
       const vapid = await api.pushVapidKey();
       if (!vapid.publicKey) return;
@@ -83,7 +83,6 @@ export function usePwa(): PwaState {
     },
     async unsubscribeFromPush(): Promise<void> {
       const sw = navigator.serviceWorker;
-      if (!sw.controller) return;
       const reg = await sw.ready;
       const sub = await reg.pushManager.getSubscription();
       if (sub) {

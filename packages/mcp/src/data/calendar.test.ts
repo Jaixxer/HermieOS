@@ -238,6 +238,15 @@ describe('calendar data layer', () => {
       async getUserInfo() {
         return { email: 'me@example.com' };
       },
+      async createEvent() {
+        throw new Error('not used in this test');
+      },
+      async updateEvent() {
+        throw new Error('not used in this test');
+      },
+      async deleteEvent() {
+        throw new Error('not used in this test');
+      },
     };
     setGoogleCalendarClient(fakeClient);
 

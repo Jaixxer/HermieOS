@@ -41,13 +41,12 @@ async function seedUser(label: string): Promise<{ id: string; token: string }> {
   return { id: row.id, token: row.token };
 }
 
-let app: Hono;
 const registry = new ToolRegistry();
 registerObjectTools(registry);
 registerRelationshipAndSubscriptionTools(registry);
 registerNotifyTool(registry);
 registerRunsTool(registry);
-app = buildMcpApp(registry);
+const app = buildMcpApp(registry);
 
 async function initSession(token: string): Promise<string> {
   const res = await app.fetch(

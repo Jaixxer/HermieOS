@@ -21,7 +21,9 @@ import { registerRunRoutes } from './routes/runs.js';
 import { registerEventsRoutes } from './routes/events.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerCalendarRoutes } from './routes/calendar.js';
+import { registerDiscussRoutes } from './routes/discuss.js';
 import { registerGoogleOauthAppRoutes } from './routes/google-oauth-app.js';
+import { registerNotificationsRoutes } from './routes/notifications.js';
 import { ApiError, sendError } from './errors.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -33,6 +35,19 @@ export async function buildApp(): Promise<FastifyInstance> {
     logger: loggerOptions(),
     genReqId: (req) => req.headers['x-request-id']?.toString() ?? randomUUID(),
     bodyLimit: 1024 * 1024, // 1 MiB
+  });
+
+  // Strip ETag + last-modified + cache-control: public on every API response.
+  // These are all dynamic JSON endpoints — we never want the browser to
+  // revalidate with If-None-Match, because Fastify's 304 reply has an empty
+  // body and the client would see no JSON. The browser's disk cache
+  // (persistent across Electron launches) holds stale ETags, so 304s happen
+  // spuriously and silently break requests.
+  app.addHook('onSend', async (_req, reply, payload) => {
+    reply.header('etag', undefined as unknown as string);
+    reply.header('last-modified', undefined as unknown as string);
+    reply.header('cache-control', 'no-store');
+    return payload;
   });
 
   await app.register(cookie, {
@@ -110,7 +125,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await registerEventsRoutes(app);
   await registerDashboardRoutes(app);
   await registerCalendarRoutes(app);
+  await registerDiscussRoutes(app);
   await registerGoogleOauthAppRoutes(app);
+  await registerNotificationsRoutes(app);
 
   // Serve the web client (PWA) from the built dist/ directory.
   if (existsSync(webDist)) {

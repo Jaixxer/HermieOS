@@ -390,6 +390,15 @@ export const archiveSubscriptionArgsSchema = z.object({
   source: z.string().min(1).max(500),
 });
 
+export const getSubscriptionArgsSchema = z.object({
+  id: z.string().uuid(),
+});
+
+export const runSubscriptionNowArgsSchema = z.object({
+  id: z.string().uuid(),
+  source: z.string().min(1).max(500).optional(),
+});
+
 export const recordFeedbackArgsSchema = z.object({
   objectId: z.string().uuid(),
   kind: feedbackKindSchema,
@@ -534,6 +543,10 @@ export const archiveTaskArgsSchema = z.object({
 
 export const getTaskArgsSchema = z.object({
   id: z.string().uuid(),
+});
+
+export const getTaskAnalyticsArgsSchema = z.object({
+  days: z.number().int().min(1).max(30).default(7),
 });
 
 // Batch send-to-hermes: takes a list of task IDs (created in dashboard) and

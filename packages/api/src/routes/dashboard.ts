@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createTtlCache } from '@hermieos/cache';
 import { getDashboard } from '@hermieos/mcp/src/data/dashboard.js';
 import { createTask, updateTask, archiveTask, markTasksSentToHermes, listTasks } from '@hermieos/mcp/src/data/tasks.js';
+import { getTaskAnalytics } from '@hermieos/mcp/src/data/task-analytics.js';
 import { createUpcoming, updateUpcoming, archiveUpcoming, listUpcoming } from '@hermieos/mcp/src/data/upcoming.js';
 import { BadRequest, NotFound, Unauthorized, sendError } from '../errors.js';
 
@@ -133,6 +134,18 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
     }
     const result = await listTasks(req.user.id, parsed.data);
     return result;
+  });
+
+  // GET /tasks/analytics — mission analytics: completed today, pending,
+  // overdue, deferred-to-tomorrow, and a created/completed trend.
+  app.get('/tasks/analytics', async (req, reply) => {
+    if (!req.user) {
+      return sendError(reply, new Unauthorized(), String(req.id));
+    }
+    const q = req.query as { days?: string };
+    const days = q.days ? Math.min(Math.max(parseInt(q.days, 10) || 7, 1), 30) : 7;
+    const analytics = await getTaskAnalytics(req.user.id, days);
+    return analytics;
   });
 
   // POST /tasks — create a task from the dashboard.

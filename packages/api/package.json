@@ -21,6 +21,7 @@
     "@hermieos/cache": "workspace:*",
     "@hermieos/db": "workspace:*",
     "@hermieos/domain": "workspace:*",
+    "@hermieos/gateway": "workspace:*",
     "@hermieos/mcp": "workspace:*",
     "argon2": "^0.45.0",
     "drizzle-orm": "^0.45.2",

@@ -15,7 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { NOTIFY_USER_DAILY_LIMIT, RETRY_BACKOFFS_MS } from '@hermieos/domain';
 import { schema } from '@hermieos/db';
-import { type HermesClient } from './hermes-client.js';
+import { type HermesClient } from '@hermieos/gateway';
 import {
   emitRunFinishedFeedEvent,
   emitSystemNotification,

@@ -1289,7 +1289,9 @@ function FindingsSection({
     if (typeFilter !== 'all') {
       list = list.filter((o) => o.type === typeFilter);
     }
-    if (sortBy === 'type') {
+    if (sortBy === 'updated') {
+      list = [...list].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    } else if (sortBy === 'type') {
       list = [...list].sort((a, b) => a.type.localeCompare(b.type));
     }
     return list;

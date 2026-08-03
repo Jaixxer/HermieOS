@@ -14,7 +14,7 @@ import {
   Save,
   ExternalLink,
 } from 'lucide-react';
-import { api, type CalendarEvent } from '../api';
+import { api, getApiBase, type CalendarEvent } from '../api';
 import { Sidebar } from '../components/Sidebar';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -341,7 +341,7 @@ function GoogleConnectButton({
         onClick={async () => {
           setBusy(true);
           try {
-            const { url } = await api.calendarAuthUrl(window.location.origin + '/calendar');
+            const { url } = await api.calendarAuthUrl(getApiBase() + '/calendar');
             window.location.href = url;
           } finally {
             setBusy(false);

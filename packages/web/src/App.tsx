@@ -9,6 +9,7 @@ import { SignupPage } from './pages/SignupPage';
 import { ConnectPage } from './pages/ConnectPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ObjectDetailPage } from './pages/ObjectDetailPage';
+import { FindingChatPage } from './pages/FindingChatPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { McpTokenPage } from './pages/McpTokenPage';
@@ -18,6 +19,9 @@ import { FindingsListPage } from './pages/FindingsListPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { FeedPage } from './pages/FeedPage';
 import { ChatPage } from './pages/ChatPage';
+import { MissionPage } from './pages/MissionPage';
+import { OpportunitiesPage } from './pages/OpportunitiesPage';
+import { KnowledgePage } from './pages/KnowledgePage';
 import { isTauri } from './tauri';
 
 const Shell = isTauri() ? DesktopShell : Layout;
@@ -72,6 +76,14 @@ export function App(): React.JSX.Element {
       >
         <Route index element={<ObjectDetailPage />} />
       </Route>
+      <Route
+        path="/objects/:id/discuss"
+        element={
+          <RequireAuth>
+            <FindingChatPage />
+          </RequireAuth>
+        }
+      />
       <Route
         path="/subscriptions"
         element={
@@ -141,6 +153,30 @@ export function App(): React.JSX.Element {
         element={
           <RequireAuth>
             <FeedPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/mission"
+        element={
+          <RequireAuth>
+            <MissionPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/opportunities"
+        element={
+          <RequireAuth>
+            <OpportunitiesPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/knowledge"
+        element={
+          <RequireAuth>
+            <KnowledgePage />
           </RequireAuth>
         }
       />

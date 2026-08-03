@@ -56,6 +56,10 @@ export function useFindings() {
           out.push(o);
         }
       }
+      // Default ordering is newest first across all types. The
+      // per-type listObjects queries sort by priority then updatedAt,
+      // which would interleave old high-priority items on top.
+      out.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       return out;
     },
     enabled: connected,

@@ -8,7 +8,7 @@
  *   - Auto-update hook
  *   - IPC bridge for future native features
  */
-const { app, BrowserWindow, Tray, Menu, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, shell, Notification } = require('electron');
 const path = require('path');
 
 const isDev = !app.isPackaged;
@@ -186,3 +186,30 @@ app.on('window-all-closed', () => {
 // ---- IPC handlers ----
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:platform', () => process.platform);
+
+// ---- Native system notifications ----
+// The renderer sends `hermieos:notify` (triggered when a HermieOS
+// notification arrives, e.g. from notify_user). The main process shows
+// a real OS notification (notification center, like WhatsApp Desktop).
+// Clicking it focuses the window and routes to the linked object.
+ipcMain.on('hermieos:notify', (_event, payload) => {
+  const { title, body, url } = payload ?? {};
+  if (!Notification.isSupported()) return;
+  const n = new Notification({
+    title: title || 'HermieOS',
+    body: body || '',
+    icon: path.join(__dirname, '..', 'public', 'icon-192.png'),
+    silent: false,
+  });
+  n.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      if (url) {
+        mainWindow.webContents.send('hermieos:navigate', url);
+      }
+    }
+  });
+  n.show();
+});

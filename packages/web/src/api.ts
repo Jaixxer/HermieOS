@@ -162,6 +162,30 @@ export interface Task {
   archivedAt: string | null;
 }
 
+export interface Notification {
+  id: string;
+  objectId: string | null;
+  title: string;
+  message: string;
+  priority: 'low' | 'normal' | 'high';
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface TaskAnalytics {
+  generatedAt: string;
+  today: {
+    total: number;
+    completed: number;
+    inProgress: number;
+    pending: number;
+    overdue: number;
+    completionRate: number;
+  };
+  deferredTomorrow: number;
+  last7Days: Array<{ date: string; created: number; completed: number }>;
+}
+
 export interface Upcoming {
   id: string;
   userId: string;
@@ -465,6 +489,25 @@ export const api = {
   unreadCount(): Promise<{ unread: number }> {
     return request('/feed/unread-count');
   },
+  notifications(params: { limit?: number; unreadOnly?: boolean } = {}): Promise<{ notifications: Notification[]; unread: number }> {
+    const qs = new URLSearchParams();
+    if (params.limit) qs.set('limit', String(params.limit));
+    if (params.unreadOnly) qs.set('unreadOnly', 'true');
+    const q = qs.toString();
+    return request(`/notifications${q ? `?${q}` : ''}`);
+  },
+  notificationUnreadCount(): Promise<{ unread: number }> {
+    return request('/notifications/unread-count');
+  },
+  markNotificationRead(id: string): Promise<{ ok: true }> {
+    return request(`/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });
+  },
+  markAllNotificationsRead(): Promise<{ updated: number }> {
+    return request('/notifications/read', { method: 'POST' });
+  },
+  sendTestNotification(): Promise<{ notification: Notification }> {
+    return request('/notifications/test', { method: 'POST' });
+  },
   markFeedRead(upTo: string): Promise<{ ok: true }> {
     return request('/feed/mark-read', { method: 'POST', body: JSON.stringify({ upTo }) });
   },
@@ -493,6 +536,18 @@ export const api = {
   },
   archiveObject(id: string): Promise<{ object: ObjectSummary }> {
     return request(`/objects/${id}/archive`, { method: 'POST' });
+  },
+  discussSession(objectId: string): Promise<{ sessionId: string; exists: boolean }> {
+    return request(`/objects/${objectId}/discuss`);
+  },
+  followUp(
+    objectId: string,
+    body: { message: string; runInBackground?: boolean },
+  ): Promise<{ sessionId: string; runId?: string; background: boolean }> {
+    return request(`/objects/${objectId}/follow-up`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   },
   search(q: string, params: { type?: string; limit?: number } = {}): Promise<{ hits: SearchHit[] }> {
     const sp = new URLSearchParams({ q });
@@ -683,10 +738,11 @@ export const api = {
   archiveCategory(id: string): Promise<{ category: Category }> {
     return request(`/categories/${encodeURIComponent(id)}/archive`, { method: 'POST' });
   },
-  listObjects(params: { type?: string; limit?: number } = {}): Promise<{ objects: ObjectSummary[]; nextCursor: string | null }> {
+  listObjects(params: { type?: string; limit?: number; cursor?: string } = {}): Promise<{ objects: ObjectSummary[]; nextCursor: string | null }> {
     const qs = new URLSearchParams();
     if (params.type) qs.set('type', params.type);
     if (params.limit) qs.set('limit', String(params.limit));
+    if (params.cursor) qs.set('cursor', params.cursor);
     const q = qs.toString();
     return request(`/objects${q ? `?${q}` : ''}`);
   },
@@ -731,6 +787,9 @@ export const api = {
     if (params.limit) qs.set('limit', String(params.limit));
     const q = qs.toString();
     return request(`/tasks${q ? `?${q}` : ''}`);
+  },
+  taskAnalytics(days = 7): Promise<TaskAnalytics> {
+    return request(`/tasks/analytics?days=${days}`);
   },
   createTask(body: { title: string; notes?: string; category?: TaskCategory; status?: TaskStatus; priority?: number; dueAt?: string; objectId?: string; batchId?: string }): Promise<{ task: Task }> {
     return request('/tasks', { method: 'POST', body: JSON.stringify(body) });
@@ -834,5 +893,8 @@ export const api = {
 };
 
 export function sseUrl(): string {
-  return `${_base}/events`;
+  // EventSource cannot send the Authorization header, so we pass the
+  // bearer token as a query param for SSE auth (see /events route).
+  const q = _token ? `?token=${encodeURIComponent(_token)}` : '';
+  return `${_base}/events${q}`;
 }

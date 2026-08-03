@@ -67,6 +67,10 @@ the defaults below for the event type it handles.
 - `mcp_hermieos_link_objects` — preferred over a new object for relations
 - `mcp_hermieos_record_feedback` — never call this; the user does
 - `mcp_hermieos_notify_user` — only when a default-no notification warrants
+- `mcp_hermieos_update_subscription` — to retune a scout (its
+  instruction, target, cadence, or pause/resume) when the user's
+  feedback or the scout's performance says it is off-track. You own
+  this responsibility; see `reference/mcp-tools.md` → Scouting.
 
 The full tool reference is in `reference/mcp-tools.md` if you need it.
 

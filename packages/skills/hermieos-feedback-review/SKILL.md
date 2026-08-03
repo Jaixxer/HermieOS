@@ -53,6 +53,28 @@ The kinds mean different things:
   clarification of an existing object, update it. A `suggest` row
   without a note is just metadata; skip it.
 
+## Scout retuning
+
+A `suggest` note or a sustained ignore/archive pattern is frequently
+about the *scout*, not the object. When the signal points at a scout
+(the note mentions the scout by name, or 3+ ignores/archives in this
+window all sit on one scout's findings), you may retune it with
+`mcp_hermieos_update_subscription`:
+
+- The user wants different content → rewrite the scout's
+  `instruction` to match the note. The `suggest` note IS the new
+  instruction in the user's own words.
+- The user is drowning in irrelevant findings → tighten the
+  instruction, change the `target`, or lower the `cadence`.
+- The scout has produced nothing the user cares about for a long
+  stretch → `status: 'paused'` and explain why in your summary.
+
+Rules: read the scout first (`mcp_hermieos_get_subscription` or the
+envelope), make **one** retune per review run, never archive a scout
+unilaterally, and always report what you changed in the summary.
+Object priority shifts come first — scout retuning is only for
+clear, repeated patterns.
+
 When `stats.liked_or_saved_by_type` shows a strong pattern
 (e.g. 8 of 10 liked rows are `discovery`), that's a real signal
 about what the user values. Use `mcp_hermieos_create_object` to

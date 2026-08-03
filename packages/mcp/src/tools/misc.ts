@@ -6,11 +6,13 @@ import {
   getObjectTimelineArgsSchema,
   getRecentActivityArgsSchema,
   getRelatedObjectsArgsSchema,
+  getSubscriptionArgsSchema,
   linkObjectsArgsSchema,
   listCategoriesArgsSchema,
   listSubscriptionsArgsSchema,
   markFeedReadArgsSchema,
   recordFeedbackArgsSchema,
+  runSubscriptionNowArgsSchema,
   traverseGraphArgsSchema,
   unlinkObjectsArgsSchema,
   updateCategoryArgsSchema,
@@ -23,6 +25,7 @@ import { linkObjects, unlinkObjects, getRelatedObjects, traverseGraph } from '..
 import {
   archiveSubscription,
   createSubscription,
+  getSubscription,
   listSubscriptions,
   runSubscriptionNow,
   updateSubscription,
@@ -233,6 +236,28 @@ export function registerRelationshipAndSubscriptionTools(registry: ToolRegistry)
     schema: archiveSubscriptionArgsSchema,
     handler: async (ctx, args) => {
       const s = await archiveSubscription(ctx.userId, args.id);
+      return { subscription: s };
+    },
+  });
+
+  tool(registry, {
+    name: 'get_subscription',
+    description:
+      'Fetch a single Subscription by id (returns null if the id is not the user\'s). Read the scout before deciding to modify it — this returns the full row including instruction, target, cadence, and failure state.',
+    schema: getSubscriptionArgsSchema,
+    handler: async (ctx, args) => {
+      const s = await getSubscription(ctx.userId, args.id);
+      return { subscription: s };
+    },
+  });
+
+  tool(registry, {
+    name: 'run_subscription_now',
+    description:
+      'Force a Subscription to run on the next scheduler tick by setting next_run_at to now and clearing any retry backoff. Idempotent. Use when the user asked for an update and the scout is not yet due.',
+    schema: runSubscriptionNowArgsSchema,
+    handler: async (ctx, args) => {
+      const s = await runSubscriptionNow(ctx.userId, args.id);
       return { subscription: s };
     },
   });

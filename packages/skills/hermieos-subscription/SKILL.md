@@ -46,6 +46,32 @@ would want to know about, and record it via the MCP tools.
    "Watched `target`. No new findings." The user is happy not to be
    notified.
 
+## Research-style scouts: "nothing new" is not the default
+
+Some subscriptions are *watch* scouts (track a specific target, only
+speak up when it changes). Others are *research* scouts — the
+instruction asks you to **find** things: new papers on a topic, new
+repos, new products, new job postings. For research scouts:
+
+- **"I already have similar objects" is not a reason to skip.** The
+  user asked for *new* candidates. If the source genuinely has new
+  material, record the best candidates even if a related object
+  covers the same general topic — the new item is distinct if its
+  URL, title, or content is different from what is already recorded.
+- **The dedup rule is narrow:** skip a candidate only when it is
+  *verbatim* already recorded — same canonical URL or same exact
+  title. Do not skip based on vibes, tags, or topic overlap.
+- **If you searched and truly found nothing worth recording, say
+  why explicitly in the summary** — e.g. "Watched arxiv:cs.AI. 40
+  new papers, none matched the instruction's bar (ML systems,
+  2026)." The user sees this in the Feed and can tighten the
+  instruction.
+- A research scout that *consistently* finds nothing (3+ runs in a
+  row) is usually an instruction problem. Offer to retune it (see
+  below) in your summary — or retune it yourself with
+  `mcp_hermieos_update_subscription` when the instruction is
+  clearly narrower than the target.
+
 5. **If something has changed, write it.** For each meaningful finding:
    - If a `related_object` covers it, `mcp_hermieos_update_object` with
      the new content. Don't create a new object when an existing one
@@ -56,9 +82,17 @@ would want to know about, and record it via the MCP tools.
      `mcp_hermieos_link_objects`.
 
 6. **If the user has been ignoring the related objects for a while**
-   (`recent_feedback` is mostly `ignore` or `archive`), consider whether
-   the subscription is still worth running. Don't archive unilaterally,
-   but a one-line note in your summary is appropriate.
+   (`recent_feedback` is mostly `ignore` or `archive`), the scout is
+   off-track. You may fix it with `mcp_hermieos_update_subscription`:
+   - Mostly ignores → tighten the `instruction` (narrow the bar),
+     change the `target` to a better source, or lower the `cadence`.
+   - A `suggest` note on a finding explains what the user actually
+     wants — rewrite the instruction to match it.
+   - Persistent failure to produce anything → pause the scout
+     (`status: 'paused'`) and say so in your summary. The user can
+     resume it from the Scouting page.
+   Never archive unilaterally, and don't make more than one retune
+   per run. Say exactly what you changed and why.
 
 ## REQUIRED: tag every recorded object with the scout
 

@@ -10,11 +10,13 @@ import {
   archiveUpcomingArgsSchema,
   dashboardArgsSchema,
   getTaskArgsSchema,
+  getTaskAnalyticsArgsSchema,
 } from '@hermieos/domain';
 import type { z } from 'zod';
 import { type AuthedContext } from '../auth.js';
 import { type ToolRegistry } from '../registry.js';
 import { archiveTask, createTask, getTask, listTasks, markTasksSentToHermes, updateTask } from '../data/tasks.js';
+import { getTaskAnalytics } from '../data/task-analytics.js';
 import { archiveUpcoming, createUpcoming, getUpcoming, listUpcoming, updateUpcoming } from '../data/upcoming.js';
 import { getDashboard } from '../data/dashboard.js';
 import { recordFeedEvent } from '../data/feed.js';
@@ -118,6 +120,16 @@ export function registerDashboardTools(registry: ToolRegistry): void {
     handler: async (ctx, args) => {
       const ok = await archiveTask(ctx.userId, args.id);
       return { archived: ok };
+    },
+  });
+
+  tool(registry, {
+    name: 'get_task_analytics',
+    description:
+      'Mission analytics over the user\'s own tasks. Returns how many tasks were completed today, are pending/in-progress/overdue, how many were pushed to tomorrow (deferred), and a per-day created/completed trend for the last N days. Use to answer questions like "what did I get done today?" or to summarize the user\'s mission progress.',
+    schema: getTaskAnalyticsArgsSchema,
+    handler: async (ctx, args) => {
+      return getTaskAnalytics(ctx.userId, args.days);
     },
   });
 

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { useServer } from '../server';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -12,6 +12,9 @@ import {
 import { api } from '../api';
 import { useSse } from '../sse';
 import { PwaBanner } from '../pwa';
+import { NotificationsBell } from './NotificationsBell';
+import { ToastProvider, useToasts } from './Toasts';
+import { onSystemNotificationNavigate, showSystemNotification } from '../systemNotification';
 import { CommandPalette, useCommandPalette } from './CommandPalette';
 import { Sidebar } from './Sidebar';
 import { Button } from './ui/button';
@@ -26,11 +29,6 @@ import { cn } from '../lib/utils';
 // ============================================================================
 
 function Topbar() {
-  const { data: unread } = useQuery({
-    queryKey: ['unread'],
-    queryFn: () => api.unreadCount(),
-    refetchInterval: 30_000,
-  });
   const { user } = useAuth();
   const palette = useCommandPalette();
   const [now, setNow] = React.useState(() => new Date());
@@ -87,14 +85,7 @@ function Topbar() {
           <TooltipProvider delayDuration={400}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
-                  <Bell className="h-4 w-4" />
-                  {(unread?.unread ?? 0) > 0 ? (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full text-[9px] font-mono font-medium flex items-center justify-center bg-accent text-accent-fg">
-                      {unread!.unread > 99 ? '99+' : unread!.unread}
-                    </span>
-                  ) : null}
-                </Button>
+                <NotificationsBell />
               </TooltipTrigger>
               <TooltipContent side="bottom">Notifications</TooltipContent>
             </Tooltip>
@@ -127,33 +118,70 @@ function Topbar() {
 // Layout
 // ============================================================================
 
+function LayoutInner() {
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const { push: pushToast } = useToasts();
+
+  // System notification click → navigate to the linked object.
+  React.useEffect(() => {
+    return onSystemNotificationNavigate((url) => {
+      if (url.startsWith('/')) navigate(url);
+      else window.location.href = url;
+    });
+  }, [navigate]);
+
+  const showNotification = (n: { title: string; body?: string; objectId?: string | null }): void => {
+    qc.invalidateQueries({ queryKey: ['notifications'] });
+    pushToast({ title: n.title, body: n.body ?? undefined, objectId: n.objectId ?? undefined });
+    void showSystemNotification({
+      title: n.title,
+      body: n.body ?? '',
+      url: n.objectId ? `/objects/${n.objectId}` : undefined,
+    });
+  };
+
+  useSse({
+    onFeed: (e) => {
+      qc.invalidateQueries({ queryKey: ['feed'] });
+      qc.invalidateQueries({ queryKey: ['unread'] });
+      // Notifications are written to the feed as kind='notification'
+      // events; keep the bell's badge + list in sync.
+      if (e.kind === 'notification') {
+        showNotification({ title: e.title, body: e.body ?? undefined, objectId: e.objectId });
+      }
+    },
+    onNotification: (n) => {
+      showNotification({ title: n.title, body: n.body, objectId: n.objectId });
+    },
+  });
+
+  return null;
+}
+
 export function Layout() {
   const location = useLocation();
   const qc = useQueryClient();
   const { connected } = useServer();
 
-  useSse({
-    onFeed: () => {
-      qc.invalidateQueries({ queryKey: ['feed'] });
-      qc.invalidateQueries({ queryKey: ['unread'] });
-    },
-  });
-
   return (
-    <div className="min-h-screen flex bg-page">
-      <Sidebar activePath={location.pathname} />
-      <div className="flex-1 min-w-0 flex flex-col">
-        <Topbar />
-        {connected ? (
-          <>
-            <PwaBanner />
-            <main className="flex-1 min-w-0">
-              <Outlet />
-            </main>
-          </>
-        ) : null}
+    <ToastProvider>
+      <LayoutInner />
+      <div className="min-h-screen flex bg-page">
+        <Sidebar activePath={location.pathname} />
+        <div className="flex-1 min-w-0 flex flex-col">
+          <Topbar />
+          {connected ? (
+            <>
+              <PwaBanner />
+              <main className="flex-1 min-w-0">
+                <Outlet />
+              </main>
+            </>
+          ) : null}
+        </div>
+        <CommandPalette />
       </div>
-      <CommandPalette />
-    </div>
+    </ToastProvider>
   );
 }

@@ -38,11 +38,10 @@ async function seedUser(label: string): Promise<{ id: string; token: string }> {
   return { id: row.id, token: row.token };
 }
 
-let app: Hono;
 const registry = new ToolRegistry();
 registerObjectTools(registry);
 registerRelationshipAndSubscriptionTools(registry);
-app = buildMcpApp(registry);
+const app = buildMcpApp(registry);
 
 async function initSession(token: string): Promise<string> {
   const res = await app.fetch(
@@ -319,6 +318,82 @@ describe('subscriptions', () => {
       { id: created.parsed.subscription.id, source: 's' },
     );
     expect(arch.parsed.subscription.status).toBe('archived');
+  });
+
+  it('get_subscription returns the full row for the owner', async () => {
+    const created = await callTool<{ subscription: { id: string; name: string; target: string; instruction: string } }>(
+      sessionA,
+      userA.token,
+      'create_subscription',
+      {
+        name: 'Paper Scout',
+        target: 'arxiv:cs.AI',
+        instruction: 'find me new papers on agent tool use',
+        cadence: 'daily',
+        source: 's',
+      },
+    );
+    const got = await callTool<{ subscription: { id: string; name: string; target: string; instruction: string } }>(
+      sessionA,
+      userA.token,
+      'get_subscription',
+      { id: created.parsed.subscription.id },
+    );
+    expect(got.parsed.subscription.name).toBe('Paper Scout');
+    expect(got.parsed.subscription.target).toBe('arxiv:cs.AI');
+    expect(got.parsed.subscription.instruction).toBe('find me new papers on agent tool use');
+  });
+
+  it('get_subscription returns null for another user\'s subscription', async () => {
+    const created = await callTool<{ subscription: { id: string } }>(
+      sessionA,
+      userA.token,
+      'create_subscription',
+      { name: 'Priv', target: 't', instruction: 'i', cadence: 'daily', source: 's' },
+    );
+    const got = await callTool<{ subscription: { id: string; name: string; target: string; instruction: string } | null }>(
+      sessionB,
+      userB.token,
+      'get_subscription',
+      { id: created.parsed.subscription.id },
+    );
+    expect(got.parsed.subscription).toBeNull();
+  });
+
+  it('run_subscription_now forces the scout due on the next tick', async () => {
+    const created = await callTool<{ subscription: { id: string; nextRunAt: string; status: string } }>(
+      sessionA,
+      userA.token,
+      'create_subscription',
+      { name: 'Now', target: 't', instruction: 'i', cadence: 'daily', source: 's' },
+    );
+    const now = Date.now();
+    await new Promise((r) => setTimeout(r, 10));
+    const ran = await callTool<{ subscription: { nextRunAt: string; status: string } }>(
+      sessionA,
+      userA.token,
+      'run_subscription_now',
+      { id: created.parsed.subscription.id },
+    );
+    const next = new Date(ran.parsed.subscription.nextRunAt).getTime();
+    expect(next).toBeLessThanOrEqual(now + 5_000);
+    expect(ran.parsed.subscription.status).toBe('active');
+  });
+
+  it('run_subscription_now rejects another user\'s subscription', async () => {
+    const created = await callTool<{ subscription: { id: string } }>(
+      sessionA,
+      userA.token,
+      'create_subscription',
+      { name: 'Priv2', target: 't', instruction: 'i', cadence: 'daily', source: 's' },
+    );
+    const ran = await callTool<{ subscription?: unknown }>(
+      sessionB,
+      userB.token,
+      'run_subscription_now',
+      { id: created.parsed.subscription.id },
+    );
+    expect(ran.isError).toBe(true);
   });
 });
 

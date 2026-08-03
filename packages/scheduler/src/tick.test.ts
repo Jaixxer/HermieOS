@@ -2,11 +2,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { createDatabase, schema, closeDatabase, type Database } from '@hermieos/db';
-import { HermesClient } from './hermes-client.js';
+import { HermesClient } from '@hermieos/gateway';
 import { tickOnce, type TickSummary } from './tick.js';
 import { trackRunsOnce } from './run-tracker.js';
 import { setDb, getDb, forceReleaseSchedulerLock } from './db.js';
-import { makeFakeHermes, type FakeHermes } from './test-helpers/fake-hermes.js';
+import { makeFakeHermes, type FakeHermes } from '@hermieos/gateway/src/test-helpers/fake-hermes.js';
 
 /**
  * The tick dispatches; the run tracker reconciles. Tests that want

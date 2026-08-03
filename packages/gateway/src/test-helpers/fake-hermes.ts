@@ -60,6 +60,12 @@ export interface FakeHermesOptions {
   progressOnPoll?: boolean;
   /** Error string returned in the getRun body when status='failed'. */
   runError?: string;
+  /**
+   * Output string returned in the getRun body on success. Default
+   * 'fake output'. Set to '' to simulate a run that returned no
+   * summary.
+   */
+  getRunOutput?: string;
 }
 
 export interface FakeHermes {
@@ -68,6 +74,10 @@ export interface FakeHermes {
   port: number;
   recorded: RecordedRun[];
   recordedAll: RecordedRequest[];
+  /** In-memory session store (id → session). Shared by the /api/sessions routes. */
+  sessions: Map<string, Record<string, unknown>>;
+  /** In-memory message log per session id (array of stored messages). */
+  messages: Map<string, Array<Record<string, unknown>>>;
   setMode(opts: Partial<FakeHermesOptions>): void;
   close(): Promise<void>;
 }
@@ -150,7 +160,7 @@ export async function makeFakeHermes(initial: FakeHermesOptions = {}): Promise<F
     return c.json({
       run_id: id,
       status,
-      output: status === 'succeeded' ? 'fake output' : '',
+      output: status === 'succeeded' ? (opts.getRunOutput ?? 'fake output') : '',
       error: status === 'failed' ? (opts.runError ?? 'failed') : undefined,
     });
   });
@@ -159,6 +169,104 @@ export async function makeFakeHermes(initial: FakeHermesOptions = {}): Promise<F
     const id = c.req.param('id');
     recordedAll.push({ path: `/v1/runs/${id}/stop`, method: 'POST', receivedAt: Date.now() });
     return c.json({ status: 'stopping' });
+  });
+
+  // ================================================================
+  // /api/sessions — the chat surface (used by HermieOS follow-ups)
+  // ================================================================
+
+  const sessions = new Map<string, Record<string, unknown>>();
+  const messages = new Map<string, Array<Record<string, unknown>>>();
+
+  function sessionRow(id: string): Record<string, unknown> {
+    return {
+      id,
+      object: 'hermes.session',
+      source: 'api_server',
+      message_count: (messages.get(id) ?? []).filter((m) => m.role !== 'system').length,
+      last_active: Math.floor(Date.now() / 1000),
+    };
+  }
+
+  app.get('/api/sessions', (c) => {
+    recordedAll.push({ path: '/api/sessions', method: 'GET', receivedAt: Date.now() });
+    const q = c.req.query();
+    const source = q['source'];
+    let rows = [...sessions.keys()].map(sessionRow);
+    if (source) rows = rows.filter((s) => s.source === source);
+    const offset = Number(q['offset'] ?? 0) || 0;
+    const limit = Number(q['limit'] ?? 100) || 100;
+    rows = rows.slice(offset, offset + limit);
+    return c.json({ object: 'list', data: rows });
+  });
+
+  app.get('/api/sessions/:id', (c) => {
+    const id = c.req.param('id');
+    recordedAll.push({ path: `/api/sessions/${id}`, method: 'GET', receivedAt: Date.now() });
+    const s = sessions.get(id);
+    if (!s) return c.json({ object: 'error', message: `session not found: ${id}` }, 404);
+    return c.json({ object: 'hermes.session', session: { ...s, ...sessionRow(id) } });
+  });
+
+  app.get('/api/sessions/:id/messages', (c) => {
+    const id = c.req.param('id');
+    recordedAll.push({ path: `/api/sessions/${id}/messages`, method: 'GET', receivedAt: Date.now() });
+    if (!sessions.has(id)) return c.json({ object: 'error', message: 'session not found' }, 404);
+    return c.json({ object: 'list', session_id: id, data: messages.get(id) ?? [] });
+  });
+
+  app.post('/api/sessions', async (c) => {
+    recordedAll.push({ path: '/api/sessions', method: 'POST', receivedAt: Date.now() });
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const id = typeof body['id'] === 'string' ? body['id'] : `sess_${randomBytes(8).toString('hex')}`;
+    if (sessions.has(id)) {
+      return c.json({ object: 'error', message: `session already exists: ${id}` }, 409);
+    }
+    const row: Record<string, unknown> = {
+      ...sessionRow(id),
+      title: body['title'],
+      model: body['model'],
+      source: body['source'] ?? 'api_server',
+    };
+    sessions.set(id, row);
+    messages.set(id, []);
+    return c.json({ object: 'hermes.session', session: row });
+  });
+
+  app.patch('/api/sessions/:id', async (c) => {
+    const id = c.req.param('id');
+    recordedAll.push({ path: `/api/sessions/${id}`, method: 'PATCH', receivedAt: Date.now() });
+    const s = sessions.get(id);
+    if (!s) return c.json({ object: 'error', message: 'session not found' }, 404);
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    if (body['title'] !== undefined) s['title'] = body['title'];
+    return c.json({ object: 'hermes.session', session: { ...s, ...sessionRow(id) } });
+  });
+
+  app.delete('/api/sessions/:id', (c) => {
+    const id = c.req.param('id');
+    recordedAll.push({ path: `/api/sessions/${id}`, method: 'DELETE', receivedAt: Date.now() });
+    sessions.delete(id);
+    messages.delete(id);
+    return c.json({ object: 'hermes.session.deleted', session_id: id });
+  });
+
+  app.post('/api/sessions/:id/chat', async (c) => {
+    const id = c.req.param('id');
+    recordedAll.push({ path: `/api/sessions/${id}/chat`, method: 'POST', receivedAt: Date.now() });
+    if (!sessions.has(id)) return c.json({ object: 'error', message: 'session not found' }, 404);
+    const body = (await c.req.json().catch(() => ({}))) as { message?: string; model?: string };
+    const message = body['message'] ?? '';
+    const list = messages.get(id) ?? [];
+    list.push({ id: `user_${list.length}`, session_id: id, role: 'user', content: message, timestamp: Math.floor(Date.now() / 1000) });
+    const assistant = { id: `asst_${list.length}`, session_id: id, role: 'assistant', content: `echo: ${message}`, timestamp: Math.floor(Date.now() / 1000) };
+    list.push(assistant);
+    messages.set(id, list);
+    return c.json({
+      object: 'hermes.session.chat.completion',
+      session_id: id,
+      message: { role: 'assistant', content: assistant.content },
+    });
   });
 
   const server = await new Promise<{ port: number; close: () => Promise<void> }>((resolve) => {
@@ -200,6 +308,8 @@ export async function makeFakeHermes(initial: FakeHermesOptions = {}): Promise<F
     port: server.port,
     recorded,
     recordedAll,
+    sessions,
+    messages,
     setMode(next) {
       if (Object.keys(next).length === 0) {
         opts = {};

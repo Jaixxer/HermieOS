@@ -1,4 +1,4 @@
-import { and, count, eq, gte, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, isNull } from 'drizzle-orm';
 import { schema } from '@hermieos/db';
 import { NOTIFY_USER_DAILY_LIMIT } from '@hermieos/domain';
 import { getDb } from './db.js';
@@ -55,6 +55,9 @@ export async function notifyUser(
     priority: 'low' | 'normal' | 'high';
     objectId?: string;
     source: string;
+    /** Bypass the 5/day rate limit. Only for the test-notification
+     *  endpoint — the MCP notify_user tool never sets this. */
+    skipRateLimit?: boolean;
   },
 ): Promise<NotificationRow> {
   // Optional ownership check on objectId
@@ -77,7 +80,7 @@ export async function notifyUser(
       and(eq(schema.notifications.userId, userId), gte(schema.notifications.createdAt, start)),
     );
   const todayCount = Number(row?.n ?? 0);
-  if (todayCount >= NOTIFY_USER_DAILY_LIMIT) {
+  if (!input.skipRateLimit && todayCount >= NOTIFY_USER_DAILY_LIMIT) {
     throw new RateLimitError(todayCount, NOTIFY_USER_DAILY_LIMIT);
   }
 
@@ -94,14 +97,24 @@ export async function notifyUser(
   if (!created) throw new Error('insert failed');
 
   // Also emit a feed event so the notification appears in the user's Feed.
-  await db.insert(schema.feedEvents).values({
-    userId,
-    kind: 'notification',
-    objectId: input.objectId ?? null,
-    title: input.title,
-    body: input.message,
-    payload: { priority: input.priority, source: input.source, notificationId: created.id },
-  });
+  const [feedEvent] = await db
+    .insert(schema.feedEvents)
+    .values({
+      userId,
+      kind: 'notification',
+      objectId: input.objectId ?? null,
+      title: input.title,
+      body: input.message,
+      payload: { priority: input.priority, source: input.source, notificationId: created.id },
+    })
+    .returning({ id: schema.feedEvents.id });
+
+  if (feedEvent) {
+    await db
+      .update(schema.notifications)
+      .set({ feedEventId: feedEvent.id })
+      .where(eq(schema.notifications.id, created.id));
+  }
 
   // Fire-and-forget push delivery — don't block the response on push
   sendPushNotifications(userId, {
@@ -114,4 +127,55 @@ export async function notifyUser(
   });
 
   return rowToNotification(created);
+}
+
+export async function listNotifications(
+  userId: string,
+  opts: { limit?: number; unreadOnly?: boolean } = {},
+): Promise<NotificationRow[]> {
+  const db = getDb();
+  const conds = [eq(schema.notifications.userId, userId)];
+  if (opts.unreadOnly) conds.push(isNull(schema.notifications.readAt));
+  const rows = await db
+    .select()
+    .from(schema.notifications)
+    .where(and(...conds))
+    .orderBy(desc(schema.notifications.createdAt))
+    .limit(opts.limit ?? 30);
+  return rows.map(rowToNotification);
+}
+
+export async function getUnreadNotificationCount(userId: string): Promise<number> {
+  const db = getDb();
+  const [row] = await db
+    .select({ n: count() })
+    .from(schema.notifications)
+    .where(
+      and(eq(schema.notifications.userId, userId), isNull(schema.notifications.readAt)),
+    );
+  return Number(row?.n ?? 0);
+}
+
+export async function markNotificationRead(userId: string, id: string): Promise<boolean> {
+  const db = getDb();
+  const result = await db
+    .update(schema.notifications)
+    .set({ readAt: new Date() })
+    .where(
+      and(eq(schema.notifications.id, id), eq(schema.notifications.userId, userId)),
+    )
+    .returning({ id: schema.notifications.id });
+  return result.length > 0;
+}
+
+export async function markAllNotificationsRead(userId: string): Promise<number> {
+  const db = getDb();
+  const result = await db
+    .update(schema.notifications)
+    .set({ readAt: new Date() })
+    .where(
+      and(eq(schema.notifications.userId, userId), isNull(schema.notifications.readAt)),
+    )
+    .returning({ id: schema.notifications.id });
+  return result.length;
 }

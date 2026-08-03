@@ -187,6 +187,13 @@ function ObjectHeader({
 
         <div className="flex flex-col gap-2 items-end shrink-0">
           <FeedbackButtons objectId={obj.id} />
+          <Link
+            to={`/objects/${obj.id}/discuss`}
+            className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-text-primary text-page hover:opacity-90 transition"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            Discuss
+          </Link>
           {!obj.archivedAt ? (
             <Button variant="ghost" size="sm" onClick={onArchive}>
               Archive

@@ -87,7 +87,7 @@
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
     "jsdom": "^29.1.1",
-    "playwright": "^1.62.0",
+    "playwright": "^1.61.1",
     "tailwindcss": "^4.3.3",
     "tailwindcss-animate": "^1.0.7",
     "tslib": "^2.8.1",

@@ -7,13 +7,13 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { createDatabase, schema, closeDatabase, type Database } from '@hermieos/db';
-import { HermesClient } from './hermes-client.js';
+import { HermesClient } from '@hermieos/gateway';
 import { tickOnce } from './tick.js';
 import { trackRunsOnce, findInFlightRuns } from './run-tracker.js';
 import { setDb } from './db.js';
-import { makeFakeHermes, type FakeHermes } from './test-helpers/fake-hermes.js';
+import { makeFakeHermes, type FakeHermes } from '@hermieos/gateway/src/test-helpers/fake-hermes.js';
 
 let db: Database;
 let hermes: FakeHermes;
@@ -165,5 +165,79 @@ describe('trackRunsOnce', () => {
     const second = await trackRunsOnce(client);
     expect(second.runsSettled).toBe(0);
     expect(second.runsScanned).toBe(0);
+  });
+
+  it('emits a feed event for every successful scout run, using the agent summary as the body', async () => {
+    hermes.setMode({ getRunStatus: 'succeeded', getRunOutput: 'Watched arxiv:cs.AI. No new findings.' });
+    const u = await seedUser('alice');
+    const [sub] = await db
+      .insert(schema.subscriptions)
+      .values({
+        userId: u.id,
+        name: 'Paper Scout',
+        target: 'arxiv:cs.AI',
+        instruction: 'find me a paper',
+        cadence: 'daily',
+        nextRunAt: new Date(Date.now() - 60_000),
+      })
+      .returning();
+    if (!sub) throw new Error('seed sub failed');
+
+    await tickOnce(client);
+    const summary = await trackRunsOnce(client);
+    expect(summary.runsSettled).toBe(1);
+
+    const [feed] = await db
+      .select()
+      .from(schema.feedEvents)
+      .where(sql`${schema.feedEvents.userId} = ${u.id} and ${schema.feedEvents.kind} = 'task_finished'`);
+    expect(feed).toBeDefined();
+    expect(feed?.title).toBe('Scout "Paper Scout" ran');
+    expect(feed?.body).toBe('Watched arxiv:cs.AI. No new findings.');
+    expect((feed?.payload as Record<string, unknown> | null)?.status).toBe('succeeded');
+    expect((feed?.payload as Record<string, unknown> | null)?.subscriptionId).toBe(sub.id);
+  });
+
+  it('emits a fallback feed event when a successful scout run returns no summary', async () => {
+    hermes.setMode({ getRunStatus: 'succeeded', getRunOutput: '' });
+    const u = await seedUser('alice');
+    await db.insert(schema.subscriptions).values({
+      userId: u.id,
+      name: 'Quiet Scout',
+      target: 'hn:frontpage',
+      instruction: 'watch',
+      cadence: 'daily',
+      nextRunAt: new Date(Date.now() - 60_000),
+    });
+    await tickOnce(client);
+    await trackRunsOnce(client);
+
+    const [feed] = await db
+      .select()
+      .from(schema.feedEvents)
+      .where(sql`${schema.feedEvents.userId} = ${u.id} and ${schema.feedEvents.kind} = 'task_finished'`);
+    expect(feed?.title).toBe('Scout "Quiet Scout" ran');
+    expect(feed?.body).toBe('Watched hn:frontpage. Run completed with no summary.');
+  });
+
+  it('does not emit a scout feed event for a successful ad_hoc run', async () => {
+    hermes.setMode({ getRunStatus: 'succeeded' });
+    const u = await seedUser('alice');
+    await db.insert(schema.hermesRuns).values({
+      id: randomUUID(),
+      userId: u.id,
+      kind: 'ad_hoc',
+      subscriptionId: null,
+      prompt: '{"event":"research"}',
+      hermesRunId: 'hermes-adhoc-1',
+      status: 'running',
+    });
+    await trackRunsOnce(client);
+
+    const feeds = await db
+      .select()
+      .from(schema.feedEvents)
+      .where(sql`${schema.feedEvents.userId} = ${u.id}`);
+    expect(feeds.filter((f) => f.kind === 'task_finished')).toHaveLength(0);
   });
 });

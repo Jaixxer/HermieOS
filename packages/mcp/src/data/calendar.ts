@@ -1,4 +1,4 @@
-import { and, asc, between, eq, excluded, gte, lte } from 'drizzle-orm';
+import { and, asc, eq, gte, lte } from 'drizzle-orm';
 import { schema } from '@hermieos/db';
 import { getDb } from './db.js';
 import { getGoogleOauthApp } from './google-oauth-app.js';
@@ -15,6 +15,21 @@ export type GoogleCalendarEvent = {
   status: string;
   attendees: Array<{ email: string; name?: string; responseStatus?: string }>;
   raw: Record<string, unknown>;
+};
+
+export type GoogleCalendarEventInput = {
+  title: string;
+  description: string | null;
+  location: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  allDay: boolean;
+  attendees: Array<{ email: string; name?: string }>;
+};
+
+export type GoogleCalendarEventOutput = {
+  externalId: string;
+  htmlLink: string;
 };
 
 export type GoogleOauthTokenRow = {
@@ -328,20 +343,41 @@ export interface GoogleCalendarClient {
     calendarId?: string;
   }): Promise<GoogleCalendarEvent[]>;
   getUserInfo(accessToken: string): Promise<{ email: string }>;
+  createEvent(accessToken: string, opts: {
+    calendarId?: string;
+    event: GoogleCalendarEventInput;
+  }): Promise<GoogleCalendarEventOutput>;
+  updateEvent(accessToken: string, opts: {
+    calendarId?: string;
+    eventId: string;
+    event: GoogleCalendarEventInput;
+  }): Promise<void>;
+  deleteEvent(accessToken: string, opts: {
+    calendarId?: string;
+    eventId: string;
+  }): Promise<void>;
 }
 
 let _client: GoogleCalendarClient = defaultGoogleCalendarClient();
+let _clientInjected = false;
 
 export function getGoogleCalendarClient(): GoogleCalendarClient {
   return _client;
 }
 
+/** True when a test injected a fake client via setGoogleCalendarClient. */
+export function isGoogleCalendarClientInjected(): boolean {
+  return _clientInjected;
+}
+
 export function setGoogleCalendarClient(c: GoogleCalendarClient): void {
   _client = c;
+  _clientInjected = true;
 }
 
 export function resetGoogleCalendarClient(): void {
   _client = defaultGoogleCalendarClient();
+  _clientInjected = false;
 }
 
 /**
@@ -430,6 +466,52 @@ export function createGoogleCalendarClient(
       const data = (await res.json()) as { email?: string };
       return { email: data.email ?? '' };
     },
+    async createEvent(accessToken, opts) {
+      const res = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${opts.calendarId ?? 'primary'}/events`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(localEventToGoogle(opts.event)),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`google calendar create event failed: ${res.status} ${body}`);
+      }
+      const data = (await res.json()) as { id?: string; htmlLink?: string };
+      return { externalId: String(data.id ?? ''), htmlLink: data.htmlLink ?? '' };
+    },
+    async updateEvent(accessToken, opts) {
+      const res = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${opts.calendarId ?? 'primary'}/events/${encodeURIComponent(opts.eventId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(localEventToGoogle(opts.event)),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`google calendar update event failed: ${res.status} ${body}`);
+      }
+    },
+    async deleteEvent(accessToken, opts) {
+      const res = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${opts.calendarId ?? 'primary'}/events/${encodeURIComponent(opts.eventId)}`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (!res.ok && res.status !== 410) {
+        const body = await res.text();
+        throw new Error(`google calendar delete event failed: ${res.status} ${body}`);
+      }
+    },
   };
 }
 
@@ -449,6 +531,14 @@ export async function getActiveGoogleCredentials(
     clientId: process.env.GOOGLE_OAUTH_CLIENT_ID ?? '',
     clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? '',
   };
+}
+
+/** Tuple form of getActiveGoogleCredentials for createGoogleCalendarClient. */
+async function activeCredentialsPair(
+  userId: string,
+): Promise<[string, string]> {
+  const { clientId, clientSecret } = await getActiveGoogleCredentials(userId);
+  return [clientId, clientSecret];
 }
 
 function defaultGoogleCalendarClient(): GoogleCalendarClient {
@@ -533,6 +623,52 @@ function defaultGoogleCalendarClient(): GoogleCalendarClient {
       const data = (await res.json()) as { email?: string };
       return { email: data.email ?? '' };
     },
+    async createEvent(accessToken, opts) {
+      const res = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${opts.calendarId ?? 'primary'}/events`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(localEventToGoogle(opts.event)),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`google calendar create event failed: ${res.status} ${body}`);
+      }
+      const data = (await res.json()) as { id?: string; htmlLink?: string };
+      return { externalId: String(data.id ?? ''), htmlLink: data.htmlLink ?? '' };
+    },
+    async updateEvent(accessToken, opts) {
+      const res = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${opts.calendarId ?? 'primary'}/events/${encodeURIComponent(opts.eventId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(localEventToGoogle(opts.event)),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`google calendar update event failed: ${res.status} ${body}`);
+      }
+    },
+    async deleteEvent(accessToken, opts) {
+      const res = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${opts.calendarId ?? 'primary'}/events/${encodeURIComponent(opts.eventId)}`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (!res.ok && res.status !== 410) {
+        const body = await res.text();
+        throw new Error(`google calendar delete event failed: ${res.status} ${body}`);
+      }
+    },
   };
 }
 
@@ -570,6 +706,58 @@ function notNull<T>(v: T | null): v is T {
   return v !== null;
 }
 
+function localEventToGoogle(e: GoogleCalendarEventInput): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    summary: e.title,
+    description: e.description ?? undefined,
+    location: e.location ?? undefined,
+  };
+  if (e.allDay) {
+    body.start = { date: e.startsAt.toISOString().slice(0, 10) };
+    body.end = { date: e.endsAt.toISOString().slice(0, 10) };
+  } else {
+    body.start = { dateTime: e.startsAt.toISOString() };
+    body.end = { dateTime: e.endsAt.toISOString() };
+  }
+  if (e.attendees.length > 0) {
+    body.attendees = e.attendees.map((a) => ({
+      email: a.email,
+      displayName: a.name ?? undefined,
+    }));
+  }
+  return body;
+}
+
+// ---------- Google client helper ----------
+
+/**
+ * Returns an authenticated GoogleCalendarClient + valid access token
+ * for the given user. Refreshes the token if expired. Throws if the
+ * user hasn't connected Google Calendar.
+ */
+export async function getUserGoogleClient(
+  userId: string,
+): Promise<{ client: GoogleCalendarClient; accessToken: string; email: string }> {
+  let tokens = await getGoogleOauthTokens(userId);
+  if (!tokens) {
+    throw new Error('google calendar not connected');
+  }
+  const { clientId, clientSecret } = await getActiveGoogleCredentials(userId);
+  const client = createGoogleCalendarClient(clientId, clientSecret);
+  if (tokens.expiresAt.getTime() < Date.now() + 30_000) {
+    const refreshed = await client.refreshToken(tokens.refreshToken);
+    const expiresAt = new Date(Date.now() + refreshed.expiresIn * 1000);
+    tokens = await saveGoogleOauthTokens(userId, {
+      accessToken: refreshed.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt,
+      scope: tokens.scope,
+      email: tokens.email,
+    });
+  }
+  return { client, accessToken: tokens.accessToken, email: tokens.email };
+}
+
 // ---------- Sync helper ----------
 
 /**
@@ -588,8 +776,11 @@ export async function syncGoogleCalendar(
   if (!tokens) {
     throw new Error('google calendar not connected');
   }
-  const { clientId, clientSecret } = await getActiveGoogleCredentials(userId);
-  const userClient = createGoogleCalendarClient(clientId, clientSecret);
+  // Tests inject a fake client; production builds one from the user's
+  // credentials (per-user app, then env vars).
+  const userClient = _clientInjected
+    ? getGoogleCalendarClient()
+    : createGoogleCalendarClient(...(await activeCredentialsPair(userId)));
   // Refresh if expired
   if (tokens.expiresAt.getTime() < Date.now() + 30_000) {
     const refreshed = await userClient.refreshToken(

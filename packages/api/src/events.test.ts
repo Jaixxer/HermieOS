@@ -13,6 +13,7 @@ let aliceId: string;
 let bobCookie: string;
 
 async function cleanup(): Promise<void> {
+  await db.execute(sql`delete from notifications where user_id in (select id from users where email like '%@api-test.local')`);
   await db.execute(sql`delete from feed_events where user_id in (select id from users where email like '%@api-test.local')`);
   await db.execute(sql`delete from sessions where user_id in (select id from users where email like '%@api-test.local')`);
   await db.execute(sql`delete from users where email like '%@api-test.local'`);
@@ -97,6 +98,29 @@ describe('openEventStream (bus) — direct test', () => {
       aliceHandle.close();
     }
   });
+
+  it('emits notification events for the user', async () => {
+    const { openEventStream, setDb } = await import('./sse-bus.js');
+    setDb(db);
+    const aliceReceived: Array<{ type: string; title: string }> = [];
+    const aliceHandle = openEventStream(aliceId, {
+      onEvent: (e) => {
+        if (e.type === 'notification') aliceReceived.push({ type: 'notification', title: e.event.title });
+      },
+    });
+    try {
+      await db.insert(schema.notifications).values({
+        userId: aliceId,
+        title: 'notif-direct',
+        message: 'ping',
+        priority: 'high',
+      });
+      await new Promise((r) => setTimeout(r, SSE_POLL_MS * 3 + 100));
+      expect(aliceReceived).toContainEqual({ type: 'notification', title: 'notif-direct' });
+    } finally {
+      aliceHandle.close();
+    }
+  });
 });
 
 describe('GET /events (SSE)', () => {
@@ -140,6 +164,53 @@ describe('GET /events (SSE)', () => {
     } finally {
       await app.close();
       // rebuild and re-listen for subsequent tests that call app.inject()
+      app = await buildApp();
+    }
+  });
+
+  it('opens an SSE stream authenticated via ?token= (Electron path)', async () => {
+    // EventSource can't send the Authorization header, so the desktop
+    // client passes the bearer (MCP) token as a query param.
+    const [row] = await db
+      .select({ mcpToken: schema.users.mcpToken })
+      .from(schema.users)
+      .where(sql`${schema.users.email} = 'alice@api-test.local'`);
+    if (!row) throw new Error('alice missing');
+
+    const address = await app.listen({ port: 0, host: '127.0.0.1' });
+    try {
+      const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        const req = http.get(
+          `${address}/events?token=${encodeURIComponent(row.mcpToken)}`,
+          { headers: { accept: 'text/event-stream' } },
+          (res) => resolve(res),
+        );
+        req.on('error', reject);
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/event-stream');
+      response.destroy();
+    } finally {
+      await app.close();
+      app = await buildApp();
+    }
+  });
+
+  it('rejects an SSE stream with a bogus ?token=', async () => {
+    const address = await app.listen({ port: 0, host: '127.0.0.1' });
+    try {
+      const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        const req = http.get(
+          `${address}/events?token=bogus`,
+          { headers: { accept: 'text/event-stream' } },
+          (res) => resolve(res),
+        );
+        req.on('error', reject);
+      });
+      expect(response.statusCode).toBe(401);
+      response.destroy();
+    } finally {
+      await app.close();
       app = await buildApp();
     }
   });

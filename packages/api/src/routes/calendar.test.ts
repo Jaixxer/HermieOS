@@ -206,6 +206,15 @@ describe('calendar API', () => {
         async getUserInfo() {
           return { email: 'me@example.com' };
         },
+        async createEvent() {
+          throw new Error('not used');
+        },
+        async updateEvent() {
+          throw new Error('not used');
+        },
+        async deleteEvent() {
+          throw new Error('not used');
+        },
       };
       setGoogleCalendarClient(fakeClient);
 
