@@ -1,5 +1,57 @@
+/* ============================================================================
+ * HermieOS Design System — editorial-inspired
+ * ============================================================================
+ *
+ * Typography: Inter (sans) + Playfair Display (serif italic — the greeting voice)
+ * Palette: near-black paper, cream accents, crimson #D5001C, amber #f5a623
+ * ========================================================================== */
+
 @import 'tailwindcss';
 @plugin 'tailwindcss-animate';
+
+/* Playfair Display — self-hosted (the AppImage runs offline from file://). */
+@font-face {
+  font-family: 'Playfair Display';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/playfair-italic-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Playfair Display';
+  font-style: italic;
+  font-weight: 900;
+  font-display: swap;
+  src: url('/fonts/playfair-italic-900.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Playfair Display';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/playfair-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Playfair Display';
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  src: url('/fonts/playfair-900.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'P5 Display';
+  font-style: italic;
+  font-weight: 700 900;
+  font-display: swap;
+  src: url('/fonts/roboto-condensed-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'P5 Display';
+  font-style: normal;
+  font-weight: 700 900;
+  font-display: swap;
+  src: url('/fonts/roboto-condensed-normal.woff2') format('woff2');
+}
 
 /* ============================================================================
  * HermieOS Design System — Light Mode
@@ -24,13 +76,29 @@
   --color-text-quaternary: #9ca3af;
   --color-text-muted: #9ca3af;
 
-  /* Accent — green */
-  --color-accent: #16a34a;
-  --color-accent-hover: #15803d;
-  --color-accent-muted: rgba(22, 163, 74, 0.10);
-  --color-accent-soft: rgba(22, 163, 74, 0.06);
+  /* Accent — Phantom Thief Crimson (editorial) */
+  --color-accent: #d5001c;
+  --color-accent-hover: #b30018;
+  --color-accent-muted: rgba(213, 0, 28, 0.10);
+  --color-accent-soft: rgba(213, 0, 28, 0.06);
   --color-accent-fg: #ffffff;
-  --color-accent-text: #15803d;
+  --color-accent-text: #c4001c;
+
+  /* P5 palette — cream workspace, dark charcoal frame (the sidebar and
+     the thinking-panels), crimson voice, amber for approvals only.
+     Workspace is warm paper, not glass; the dark panels separate
+     "thinking" from "reading". */
+  --color-p5-cream: #f4f1e9;
+  --color-p5-dark: #1c1a17;
+  --color-p5-dark-muted: rgba(28, 26, 23, 0.62);
+  --color-p5-dark-line: rgba(28, 26, 23, 0.16);
+  --color-p5-ink: #161616;
+  --color-p5-ink-2: #1f1f1f;
+  --color-p5-ink-3: #2b2b2b;
+  --color-p5-panel: #ffffff;
+  --color-p5-line: rgba(255, 255, 255, 0.10);
+  --color-p5-text: #f2efe7;
+  --color-p5-muted: rgba(242, 239, 231, 0.55);
 
   /* Status */
   --color-status-active: #22c55e;
@@ -116,4 +184,71 @@
     border: 2px solid var(--color-page);
   }
   ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+}
+
+/* ============================================================================
+ * editorial utilities — dark screens, hard edges, halftone, motion
+ * ========================================================================== */
+
+/* Cut-corner panel (bottom-right notch). */
+.p5-panel {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%);
+}
+
+/* The reference uses hard, editorial cuts instead of rounded cards. */
+.p5-cut-panel {
+  clip-path: polygon(0 0, 98% 0, 100% 100%, 0 100%);
+}
+/* Giant display numerals for the "3 things waiting" hierarchy. */
+.p5-giant {
+  font-size: clamp(56px, 12vw, 120px);
+  line-height: 0.85;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mono kicker above giant numbers — the tiny screaming label. */
+.p5-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+/* Motion — weighty, snappy (Persona never floats gently). */
+@keyframes p5-slide-in {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.p5-anim-slide { animation: p5-slide-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* Weighty hover: hard shadow displacement, no blur. */
+.p5-hover-lift {
+  transition: transform 0.15s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.p5-hover-lift:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 rgba(213, 0, 28, 0.55);
+}
+
+/* Serif italic — the greeting voice (Playfair Display). */
+.font-p5-serif {
+  font-family: 'P5 Display', 'Arial Narrow', sans-serif;
+  font-style: italic;
+  font-weight: 900;
+}
+
+/* Halftone dot overlay for red surfaces (briefing corner, ask-bar texture). */
+.p5-halftone-red {
+  background-image: radial-gradient(rgba(213, 0, 28, 0.5) 1.5px, transparent 2px);
+  background-size: 10px 10px;
+}
+
+/* The slanted red shape for the active nav destination (editorial's angled slab). */
+.p5-skew {
+  clip-path: polygon(0 0, 100% 0, 85% 100%, 0 100%);
 }

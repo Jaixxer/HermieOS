@@ -2,10 +2,11 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createTtlCache } from '@hermieos/cache';
 import { getDashboard } from '@hermieos/mcp/src/data/dashboard.js';
-import { createTask, updateTask, archiveTask, markTasksSentToHermes, listTasks } from '@hermieos/mcp/src/data/tasks.js';
+import { createTask, updateTask, archiveTask, markTasksSentToHermes, listTasks, getTask } from '@hermieos/mcp/src/data/tasks.js';
 import { getTaskAnalytics } from '@hermieos/mcp/src/data/task-analytics.js';
 import { createUpcoming, updateUpcoming, archiveUpcoming, listUpcoming } from '@hermieos/mcp/src/data/upcoming.js';
-import { BadRequest, NotFound, Unauthorized, sendError } from '../errors.js';
+import { ensureGatewaySession, gatewayFromEnv } from '../gateway-sessions.js';
+import { BadRequest, NotFound, ServiceUnavailable, Unauthorized, sendError } from '../errors.js';
 
 const DASHBOARD_CACHE_TTL_MS = Number(process.env.DASHBOARD_CACHE_TTL_MS ?? 30_000);
 const DASHBOARD_CACHE_MAX = 1000;
@@ -56,6 +57,12 @@ const updateTaskBody = z
       v.dueAt !== undefined,
     { message: 'At least one updatable field must be provided' },
   );
+
+/** Delegation is optional context on top of the task itself — the
+ *  task stays yours; Hermes just gets the brief. */
+const delegateTaskBody = z.object({
+  context: z.string().max(4000).optional(),
+});
 
 const sendBatchBody = z.object({
   taskIds: z.array(z.string().uuid()).min(1).max(50),
@@ -234,6 +241,57 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
         parsed.data.prompt ??
         `The user has queued ${parsed.data.taskIds.length} new task(s) for your attention. Please review and start work on them.`,
     };
+  });
+
+  // POST /tasks/:id/delegate — hand ONE task to Hermes, with optional
+  // context. The task stays on the user's mission (it is theirs to
+  // own); this only opens a dedicated conversation where Hermes takes
+  // it on and reports back. Deterministic session id: task-<taskId>.
+  app.post('/tasks/:id/delegate', async (req, reply) => {
+    if (!req.user) {
+      return sendError(reply, new Unauthorized(), String(req.id));
+    }
+    const { id } = req.params as { id: string };
+    const parsed = delegateTaskBody.safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(reply, new BadRequest('invalid_input', parsed.error.flatten()), String(req.id));
+    }
+    const task = await getTask(req.user.id, id);
+    if (!task) {
+      return sendError(reply, new NotFound('task_not_found'), String(req.id));
+    }
+
+    const gateway = gatewayFromEnv();
+    if (!gateway) {
+      return sendError(
+        reply,
+        new ServiceUnavailable('Hermes gateway is not configured (HERMES_GATEWAY_URL / HERMES_API_KEY)'),
+        String(req.id),
+      );
+    }
+
+    const sessionId = `task-${task.id}`;
+    await ensureGatewaySession(gateway, sessionId, task.title);
+
+    const lines: string[] = [];
+    lines.push(`Task: ${task.title}`);
+    lines.push(`Category: ${task.category}`);
+    if (task.notes) lines.push(`Notes: ${task.notes}`);
+    if (task.dueAt) {
+      lines.push(`Due: ${task.dueAt.toISOString()}`);
+    }
+    const context = parsed.data.context?.trim();
+    if (context) {
+      lines.push(`\nContext from the user:\n${context}`);
+    }
+    lines.push(
+      '\nPlease take on this task and do it. Report back in this conversation — do not just acknowledge it.',
+    );
+
+    await gateway.chat(sessionId, { message: lines.join('\n') });
+    await markTasksSentToHermes(req.user.id, [task.id]);
+    invalidateDashboard(req.user.id);
+    return { sessionId, delegated: true };
   });
 
   // --- Upcoming ---

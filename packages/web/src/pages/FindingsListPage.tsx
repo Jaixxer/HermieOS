@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
   ExternalLink,
   Star,
   Search,
@@ -22,11 +21,8 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { api, type ObjectSummary } from '../api';
 import { useFindings } from '../hooks/data';
-import { Sidebar } from '../components/Sidebar';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
+import { NavRail } from '../components/NavRail';
 import { cn, formatRelative } from '../lib/utils';
-import { Loading } from '../components/Loading';
 
 /**
  * Findings deck — the scouting feed.
@@ -157,35 +153,32 @@ export function FindingsListPage(): React.JSX.Element {
   }
 
   return (
-    <div className="h-screen overflow-hidden flex bg-page text-text-primary">
-      <Sidebar activePath="/scouting" className="hidden lg:flex" />
+    <div className="h-screen overflow-hidden flex bg-p5-cream text-p5-dark">
+      <NavRail activePath="/scouting" />
       <main className="flex-1 min-w-0 min-h-0 flex flex-col">
         {/* Header */}
-        <div className="shrink-0 px-6 py-4 border-b border-border-default bg-surface-0/95 backdrop-blur">
-          <div className="flex items-center gap-3">
-            <Link to="/scouting" className="flex items-center gap-2 text-text-tertiary hover:text-text-primary transition">
-              <ArrowLeft className="w-4 h-4" />
-              <span className="text-[13px]">Scouting</span>
-            </Link>
-            <span className="text-[11px] text-text-quaternary">/</span>
-            <h1 className="text-[15px] font-semibold tracking-tight">Findings</h1>
-            <span className="text-[11px] text-text-quaternary">
-              {filtered.length} of {allFindings?.length ?? 0}
+        <div className="shrink-0 px-6 md:px-10 py-5 border-b border-p5-dark-line bg-p5-cream/95">
+          <div className="flex items-center gap-4">
+            <h1 className="text-[clamp(28px,4vw,44px)] font-black tracking-tight text-p5-dark leading-none">
+              FINDINGS
+            </h1>
+            <span className="text-[12px] font-mono text-p5-dark-muted">
+              {filtered.length} / {allFindings?.length ?? 0}
             </span>
             <div className="ml-auto flex items-center gap-2">
               <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-quaternary" />
-                <Input
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-p5-muted" />
+                <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search findings…"
-                  className="pl-8 h-8 text-[12px] w-52"
+                  className="pl-9 h-9 w-52 text-[12px] bg-white border border-p5-dark-line text-p5-dark placeholder:text-p5-dark-muted outline-none focus:border-accent transition"
                 />
               </div>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as 'updated' | 'type')}
-                className="text-[12px] h-8 px-2 rounded-md border border-border-default bg-surface-0 text-text-primary"
+                className="text-[12px] h-9 px-2 bg-white border border-p5-dark-line text-p5-dark outline-none focus:border-accent"
               >
                 <option value="updated">Newest first</option>
                 <option value="type">By type</option>
@@ -193,7 +186,7 @@ export function FindingsListPage(): React.JSX.Element {
             </div>
           </div>
           {/* Type filter pills with counts */}
-          <div className="mt-3 flex flex-wrap gap-1.5">
+          <div className="mt-4 flex flex-wrap gap-1.5">
             {TYPE_FILTERS.map((t) => {
               const active = typeFilter === t;
               const count = t === 'all' ? allFindings?.length ?? 0 : counts.get(t) ?? 0;
@@ -202,20 +195,21 @@ export function FindingsListPage(): React.JSX.Element {
                   key={t}
                   onClick={() => setTypeFilter(t)}
                   className={cn(
-                    'text-[11px] font-medium px-2.5 py-1 rounded-md border transition',
+                    'text-[11px] font-black uppercase tracking-wider px-3 py-1.5 border transition',
                     active
-                      ? 'bg-text-primary text-page border-text-primary'
-                      : 'bg-surface-0 text-text-secondary border-border-default hover:border-border-strong',
+                      ? 'bg-accent text-white border-accent'
+                      : 'border-p5-dark-line text-p5-dark-muted hover:text-p5-dark hover:border-p5-dark/60',
                   )}
                 >
                   {t === 'all' ? 'All' : t.replace('_', ' ')}
-                  <span className={cn('ml-1.5 text-[10px]', active ? 'text-page/70' : 'text-text-quaternary')}>{count}</span>
+                  <span className={cn('ml-1.5 text-[10px]', active ? 'text-white/70' : 'text-p5-muted/60')}>{count}</span>
                 </button>
               );
             })}
           </div>
         </div>
 
+        {/* Deck */}
         {/* Deck */}
         <div
           ref={deckRef}
@@ -225,25 +219,26 @@ export function FindingsListPage(): React.JSX.Element {
           data-testid="findings-deck"
         >
           {isLoading ? (
-            <Loading text="Loading findings…" className="py-24" />
+            <div className="py-24 text-center font-mono text-[12px] tracking-widest text-p5-dark-muted">LOADING FINDINGS…</div>
           ) : filtered.length === 0 ? (
-            <div className="max-w-2xl mx-auto mt-16 border border-dashed border-border-default rounded-xl p-12 text-center space-y-2">
-              <Sparkles className="w-8 h-8 mx-auto text-text-quaternary" />
-              <p className="text-[14px] font-medium text-text-primary">
+            <div className="max-w-2xl mx-auto mt-16 border-2 border-dashed border-p5-dark-line p-12 text-center space-y-3">
+              <Sparkles className="w-8 h-8 mx-auto text-p5-dark-muted" />
+              <p className="text-[16px] font-black uppercase tracking-wide text-p5-dark">
                 {allFindings?.length === 0 ? 'No findings yet' : 'Nothing matches'}
               </p>
-              <p className="text-[12px] text-text-tertiary max-w-sm mx-auto">
+              <p className="text-[12px] text-p5-dark-muted max-w-sm mx-auto">
                 {allFindings?.length === 0
                   ? 'When a scout records something, it lands here — one card per finding, like a feed of the useful internet.'
                   : 'Try a different filter or search term.'}
               </p>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto px-6 py-6 space-y-5">
+            <div className="max-w-3xl mx-auto px-6 py-8 space-y-7">
               {filtered.map((obj, i) => (
                 <DeckCard
                   key={obj.id}
                   obj={obj}
+                  index={i}
                   ref={(el) => {
                     cardRefs.current[i] = el;
                   }}
@@ -262,11 +257,11 @@ export function FindingsListPage(): React.JSX.Element {
         </div>
 
         {/* Keyboard hint bar */}
-        <div className="shrink-0 px-6 py-1.5 border-t border-border-default bg-surface-0/95 text-[10px] text-text-quaternary flex items-center gap-4">
-          <span><kbd className="font-mono">j</kbd>/<kbd className="font-mono">k</kbd> navigate</span>
-          <span><kbd className="font-mono">⏎</kbd> discuss</span>
-          <span><kbd className="font-mono">esc</kbd> clear</span>
-          <span className="ml-auto">One card per finding · discuss to go deeper</span>
+        <div className="shrink-0 px-6 py-2 border-t border-p5-dark-line bg-p5-cream text-[10px] font-mono text-p5-dark-muted flex items-center gap-4">
+          <span><kbd className="text-p5-dark">j</kbd>/<kbd className="text-p5-dark">k</kbd> navigate</span>
+          <span><kbd className="text-p5-dark">⏎</kbd> discuss</span>
+          <span><kbd className="text-p5-dark">esc</kbd> clear</span>
+          <span className="ml-auto">ONE CARD PER FINDING · DISCUSS TO GO DEEPER</span>
         </div>
       </main>
     </div>
@@ -279,13 +274,14 @@ export function FindingsListPage(): React.JSX.Element {
 
 interface DeckCardProps {
   obj: DeckFinding;
+  index: number;
   selected: boolean;
   onSelect: () => void;
   onEnter: () => void;
 }
 
 const DeckCard = React.forwardRef<HTMLDivElement, DeckCardProps>(function DeckCard(
-  { obj, selected, onSelect, onEnter },
+  { obj, index, selected, onSelect, onEnter },
   ref,
 ) {
   const identity = typeIdentity(obj.type);
@@ -296,6 +292,7 @@ const DeckCard = React.forwardRef<HTMLDivElement, DeckCardProps>(function DeckCa
   const author = typeof body['author'] === 'string' ? body['author'] : null;
   const published = typeof body['publishedDate'] === 'string' ? body['publishedDate'] : null;
   const kind = typeof body['kind'] === 'string' ? body['kind'] : null;
+  const num = String(index + 1).padStart(2, '0');
 
   return (
     <div
@@ -311,34 +308,33 @@ const DeckCard = React.forwardRef<HTMLDivElement, DeckCardProps>(function DeckCa
         }
       }}
       className={cn(
-        'relative overflow-hidden rounded-xl border bg-surface-0 shadow-sm transition [scroll-snap-align:start]',
-        selected ? 'border-text-primary ring-2 ring-text-primary/10' : 'border-border-default hover:border-border-strong',
+        'relative bg-white text-black border-2 transition [scroll-snap-align:start] p5-anim-slide',
+        'group/panel',
+        selected
+          ? 'border-black [filter:drop-shadow(6px_6px_0_rgba(213,0,28,0.55))]'
+          : 'border-black/15 hover:border-black [filter:drop-shadow(4px_4px_0_rgba(213,0,28,0.22))]',
       )}
     >
-      {/* Hard type band on the left edge */}
-      <div className={cn('absolute inset-y-0 left-0 w-1.5', identity.band)} />
-      {/* Diagonal corner cut (Persona-lite) */}
-      <div
-        className={cn('absolute -top-10 -right-10 w-28 h-28 rotate-12 opacity-[0.07]', identity.band)}
-        style={{ clipPath: 'polygon(50% 0, 100% 0, 100% 50%, 0 100%, 0 50%)' }}
-      />
+      {/* Hard type header band — full-width color block */}
+      <div className={cn('relative h-10 flex items-center gap-2.5 px-4', identity.band)}>
+        <span className="w-6 h-6 bg-page/15 flex items-center justify-center text-white border-2 border-white/60">
+          <Icon className="w-3.5 h-3.5" />
+        </span>
+        <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white">
+          // {identity.label}
+        </span>
+        <span className="hidden sm:inline text-[10px] font-mono tracking-widest text-white/70">
+          {kind ? `KIND ${kind.toUpperCase()}` : ''}
+        </span>
+        <span className="ml-auto relative text-white text-[18px] font-black tracking-tight tabular-nums leading-none">{num}</span>
+      </div>
 
-      <div className="pl-6 pr-6 py-5">
-        {/* Top row: identity + meta */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={cn('w-6 h-6 rounded-md flex items-center justify-center text-white', identity.band)}>
-            <Icon className="w-3.5 h-3.5" />
-          </span>
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary">{identity.label}</span>
-          {kind ? <span className="text-[10px] font-mono text-text-quaternary">kind: {kind}</span> : null}
-          <span className="ml-auto text-[11px] text-text-quaternary">{formatRelative(obj.updatedAt)}</span>
-        </div>
-
-        {/* Title */}
+      <div className="px-5 py-4">
+        {/* Title — big and black */}
         <Link
           to={`/objects/${obj.id}`}
           onClick={(e) => e.stopPropagation()}
-          className={cn('mt-3 block text-[21px] leading-snug font-bold tracking-tight hover:underline', identity.text)}
+          className={cn('block text-[23px] leading-tight font-black tracking-tight hover:underline', identity.text)}
         >
           {obj.title}
         </Link>
@@ -348,48 +344,64 @@ const DeckCard = React.forwardRef<HTMLDivElement, DeckCardProps>(function DeckCa
           <p className="mt-2 text-[13px] text-text-secondary leading-relaxed line-clamp-3">{obj.summary}</p>
         ) : null}
 
-        {/* Meta row */}
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-text-tertiary">
+        {/* Meta row — cut-corner chips */}
+        <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
           {url ? (
             <a
               href={url}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-accent-text hover:underline max-w-[380px] truncate"
+              className="inline-flex items-center gap-1.5 text-[11px] font-mono text-text-secondary bg-surface-1 border border-border-default px-2 py-1 max-w-[360px] truncate hover:bg-surface-2 transition"
             >
-              <ExternalLink className="w-3 h-3 shrink-0" />
+              <ExternalLink className="w-3 h-3 shrink-0 text-text-quaternary" />
               {url}
             </a>
           ) : null}
           {stars != null ? (
-            <span className="inline-flex items-center gap-1"><Star className="w-3 h-3 text-amber-500" /> {stars.toLocaleString()}</span>
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-700 bg-amber-100 px-2 py-1">
+              <Star className="w-3 h-3 fill-amber-500 text-amber-500" /> {stars.toLocaleString()}
+            </span>
           ) : null}
-          {author ? <span>{author}</span> : null}
-          {published ? <span>{published}</span> : null}
+          {author ? (
+            <span className="text-[11px] text-text-tertiary bg-surface-1 border border-border-default px-2 py-1">
+              {author}
+            </span>
+          ) : null}
+          {published ? (
+            <span className="text-[11px] font-mono text-text-tertiary bg-surface-1 border border-border-default px-2 py-1">
+              {published}
+            </span>
+          ) : null}
+          <span className="ml-auto text-[11px] font-mono text-text-quaternary">{formatRelative(obj.updatedAt)}</span>
         </div>
 
         {/* Tags */}
         {obj.tags.length > 0 ? (
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
+          <div className="mt-3 flex flex-wrap gap-1.5">
             {obj.tags.slice(0, 5).map((t) => (
-              <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-surface-2 text-text-tertiary">{t}</span>
+              <span
+                key={t}
+                className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary bg-surface-1 border border-border-default px-2 py-0.5"
+              >
+                {t}
+              </span>
             ))}
           </div>
         ) : null}
 
         {/* Actions rail */}
-        <div className="mt-4 pt-3 border-t border-border-subtle flex items-center gap-2">
+        <div className="mt-4 pt-3 border-t-2 border-black/10 flex items-center gap-2">
           <Link
             to={`/objects/${obj.id}/discuss`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-text-primary text-page hover:opacity-90 transition"
+            className="inline-flex items-center gap-1.5 text-[12px] font-black uppercase tracking-wider px-3.5 py-1.5 bg-accent text-white hover:bg-accent-hover transition"
           >
             <MessageSquare className="w-3.5 h-3.5" />
             Discuss
           </Link>
           <DeckFeedback objectId={obj.id} />
-          <span className="ml-auto text-[10px] text-text-quaternary">open · double-click to discuss</span>
+          <span className="ml-auto text-[10px] font-mono text-black/40">ENTER TO DISCUSS</span>
         </div>
       </div>
     </div>
@@ -447,7 +459,8 @@ function DeckFeedback({ objectId }: { objectId: string }): React.JSX.Element {
             }
             void send(kind);
           }}
-          className="w-7 h-7 rounded-md flex items-center justify-center text-text-tertiary hover:bg-surface-2 hover:text-text-primary transition disabled:opacity-50"
+          className="w-7 h-7 flex items-center justify-center text-black/50 border border-black/15 bg-black/[0.03] hover:bg-black hover:text-white hover:border-black transition disabled:opacity-50"
+
         >
           <Icon className="w-3.5 h-3.5" />
         </button>
@@ -461,16 +474,20 @@ function DeckFeedback({ objectId }: { objectId: string }): React.JSX.Element {
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <Input
+          <input
             autoFocus
             value={suggestText}
             onChange={(e) => setSuggestText(e.target.value)}
             placeholder="What would you rather see?"
-            className="h-7 text-[11px] w-56"
+            className="h-7 text-[11px] w-56 px-2 bg-black/[0.03] border border-black/15 text-black placeholder:text-black/40 outline-none focus:border-accent"
           />
-          <Button type="submit" size="sm" disabled={!suggestText.trim() || busy} className="rounded-md">
+          <button
+            type="submit"
+            disabled={!suggestText.trim() || busy}
+            className="text-[11px] font-black uppercase tracking-wider px-2.5 h-7 bg-black text-white hover:opacity-85 transition disabled:opacity-40"
+          >
             Send
-          </Button>
+          </button>
         </form>
       ) : null}
     </>

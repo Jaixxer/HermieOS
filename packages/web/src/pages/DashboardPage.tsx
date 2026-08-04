@@ -1,655 +1,262 @@
 import * as React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   Bell,
-  CheckCircle2,
-  Circle,
-  TrendingUp,
-  Briefcase,
-  FileText,
-  Calendar,
-  Sparkles,
-  Network,
+  MessageSquare,
   Send,
-  MessageCircle,
-  Plus,
-  Sun,
-  Target,
-  Lightbulb,
-  Radar,
-  CalendarDays,
+  ArrowRight,
+  ArrowUpRight,
+  Bot,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { api } from '../api';
 import type {
-  DashboardData,
-  Task,
-  TaskStatus,
   TaskCategory,
   Upcoming,
-  OpportunityCategory,
 } from '../api';
 import { useAuth } from '../auth';
 import { useServer } from '../server';
-import { Sidebar } from '../components/Sidebar';
-import { Button } from '../components/ui/button';
-import { Badge } from '../components/ui/badge';
-import { Card, CardContent } from '../components/ui/card';
-import { Input } from '../components/ui/input';
+import { useSse } from '../sse';
+import { cn } from '../lib/utils';
+import { NavRail } from '../components/NavRail';
 
-// ============================================================================
-// Header
-// ============================================================================
+/**
+ * The home — a editorial-styled command center.
+ *
+ * Design language (from the reference mockup):
+ *   - Dark paper, not flat black: textured surfaces, layered depth.
+ *   - Crimson is the only accent that moves the eye.
+ *   - Serif italic greeting (Playfair Display) for the human touch.
+ *   - Three tiles with their own character (red / white / yellow).
+ *   - Briefing with halftone texture + quotation marks = Hermes speaks.
+ *   - Upcoming with red date blocks = what's next.
+ */
 
-function Header({ userName }: { userName: string }): React.JSX.Element {
-  const now = new Date();
-  const hour = now.getHours();
-  const greet = hour < 5 ? 'Working late' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const dateStr = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  return (
-    <header className="flex flex-wrap items-center gap-4 mb-6">
-      <div>
-        <h1 className="text-[26px] font-semibold text-text-primary tracking-tight flex items-center gap-2">
-          {greet}, {userName}. <Sun className="w-6 h-6 text-amber-500" />
-        </h1>
-        <p className="text-[13px] text-text-tertiary mt-0.5">{dateStr}</p>
-      </div>
-      <div className="ml-auto flex items-center gap-3 flex-wrap">
-        <StatusPill label="Hermes Server" color="emerald" />
-        <StatusPill label="LLM: GLM-5.2" color="purple" />
-        <button className="w-9 h-9 rounded-lg border border-border-default flex items-center justify-center text-text-tertiary hover:bg-surface-2 transition" aria-label="Search">
-          <Search className="w-4 h-4" />
-        </button>
-        <button className="w-9 h-9 rounded-lg border border-border-default flex items-center justify-center text-text-tertiary hover:bg-surface-2 transition relative" aria-label="Notifications">
-          <Bell className="w-4 h-4" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-accent" />
-        </button>
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-200 via-pink-300 to-purple-400 flex items-center justify-center text-[11px] font-semibold text-slate-900">
-          JV
-        </div>
-      </div>
-    </header>
-  );
+type HermesPresence = 'working' | 'idle' | 'paused' | 'unknown';
+
+function useHermesPresence(): HermesPresence {
+  const { user } = useAuth();
+  const { connected } = useServer();
+  const { data } = useQuery({
+    queryKey: ['runs', 'presence'],
+    queryFn: () => api.runs(5),
+    enabled: connected,
+    refetchInterval: 15_000,
+  });
+  if (user?.schedulerEnabled === false) return 'paused';
+  const busy = (data?.runs ?? []).some((r) => r.status === 'dispatched' || r.status === 'running');
+  return busy ? 'working' : 'idle';
 }
 
-function StatusPill({ label, color }: { label: string; color: 'emerald' | 'purple' }) {
-  return (
-    <div className="flex items-center gap-1.5 rounded-lg border border-border-default bg-surface-1 px-2.5 py-1.5 text-[12px] text-text-secondary">
-      <span className={`w-2 h-2 rounded-full ${color === 'emerald' ? 'bg-status-active' : 'bg-purple-500'}`} />
-      {label}
-    </div>
-  );
+function useLastSeen(): number {
+  const [lastSeen] = React.useState<number>(() => {
+    try { return Number(localStorage.getItem('hermieos_last_seen') ?? 0) || 0; } catch { return 0; }
+  });
+  React.useEffect(() => {
+    return () => {
+      try { localStorage.setItem('hermieos_last_seen', String(Date.now())); } catch { /* */ }
+    };
+  }, []);
+  return lastSeen;
 }
 
 // ============================================================================
-// Today's Mission
+// Count-up hook + giant number
 // ============================================================================
 
-const CATEGORY_PILL_LABEL: Record<TaskCategory, string> = {
-  work: 'Work',
-  learning: 'Learning',
-  research: 'Research',
-  health: 'Health',
-  admin: 'Admin',
-  personal: 'Personal',
-  other: 'Other',
-};
+function useCountUp(target: number, duration = 650): number {
+  const [value, setValue] = React.useState(0);
+  React.useEffect(() => {
+    let raf = 0;
+    const start = performance.now();
+    const tick = (now: number): void => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setValue(Math.round(target * eased));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return value;
+}
 
-const CATEGORY_PILL_COLORS: Record<TaskCategory, string> = {
-  work: 'bg-sky-100 text-sky-700',
-  learning: 'bg-emerald-100 text-emerald-700',
-  research: 'bg-purple-100 text-purple-700',
-  health: 'bg-rose-100 text-rose-700',
-  admin: 'bg-amber-100 text-amber-700',
-  personal: 'bg-pink-100 text-pink-700',
-  other: 'bg-slate-100 text-slate-600',
-};
+function P5Number({ value, className }: { value: number; className?: string }): React.JSX.Element {
+  const shown = useCountUp(value);
+  return <div className={cn('p5-giant tabular-nums', className ?? 'text-p5-text')}>{shown}</div>;
+}
 
-function TodaysMissionCard({
-  tasks,
-  onAddTask,
-  onStatusChange,
+// ============================================================================
+// Briefing — the collaborator's morning report
+// ============================================================================
+
+function formatDuration(ms: number): string {
+  const totalMin = Math.floor(ms / 60_000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0) return `${h}H ${m}M`;
+  if (m > 0) return `${m}M`;
+  return `${Math.max(1, Math.round(ms / 1000))}S`;
+}
+
+function taskReason(t: { dueAt: string | null }): string {
+  if (!t.dueAt) return 'YOUR TOP PRIORITY';
+  const due = new Date(t.dueAt);
+  const today = new Date();
+  const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startDue = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+  const days = Math.round((startDue.getTime() - startToday.getTime()) / 86_400_000);
+  if (days < 0) return 'IT IS OVERDUE';
+  if (days === 0) return 'IT IS DUE TODAY';
+  if (days === 1) return 'IT IS DUE TOMORROW';
+  return `DUE ${due.toLocaleDateString(undefined, { weekday: 'long' }).toUpperCase()}`;
+}
+
+function P5Briefing({
+  lastSeen,
+  newSinceAway,
 }: {
-  tasks: Task[];
-  onAddTask: (title: string, category: TaskCategory) => void;
-  onStatusChange: (id: string, status: TaskStatus) => void;
+  lastSeen: number;
+  newSinceAway: number;
 }): React.JSX.Element {
-  const [draft, setDraft] = React.useState('');
-  const [category, setCategory] = React.useState<TaskCategory>('work');
+  const { user } = useAuth();
+  const { connected } = useServer();
+  const runsQ = useQuery({
+    queryKey: ['runs', 'briefing'],
+    queryFn: () => api.runs(20),
+    enabled: connected,
+    refetchInterval: 30_000,
+  });
+  const tasksQ = useQuery({
+    queryKey: ['tasks', 'briefing'],
+    queryFn: () => api.listTasks({ limit: 50 }),
+    enabled: connected,
+    refetchInterval: 60_000,
+  });
 
-  const submit = (e: React.FormEvent): void => {
-    e.preventDefault();
-    const title = draft.trim();
-    if (!title) return;
-    onAddTask(title, category);
-    setDraft('');
-  };
-
-  return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-5">
-        <div className="flex items-start gap-2 mb-4">
-          <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-text-secondary">
-            <Target className="w-4 h-4" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-[15px] font-semibold text-text-primary">Today's Mission</h3>
-            <p className="text-[12px] text-text-tertiary">Focus on what matters most.</p>
-          </div>
-        </div>
-
-        <ul className="space-y-2">
-          {tasks.length === 0 ? (
-            <li className="text-[13px] text-text-tertiary py-2">No tasks queued. Add one below.</li>
-          ) : null}
-          {tasks.map((t) => (
-            <li
-              key={t.id}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border-default bg-surface-1 hover:border-border-strong transition"
-            >
-              <button
-                type="button"
-                onClick={() => onStatusChange(t.id, t.status === 'done' ? 'todo' : 'done')}
-                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition shrink-0 ${
-                  t.status === 'done'
-                    ? 'border-accent bg-accent text-accent-fg'
-                    : t.status === 'in_progress'
-                      ? 'border-amber-400'
-                      : 'border-border-strong hover:border-text-muted'
-                }`}
-                aria-label={t.status === 'done' ? 'Mark as not done' : 'Mark as done'}
-              >
-                {t.status === 'done' ? <CheckCircle2 className="w-3.5 h-3.5" /> : null}
-              </button>
-              <div className="flex-1 min-w-0">
-                <div className={`text-[13px] ${t.status === 'done' ? 'line-through text-text-tertiary' : 'text-text-primary'}`}>
-                  {t.title}
-                </div>
-                {t.status === 'in_progress' ? <div className="text-[11px] text-amber-600 mt-0.5">In Progress</div> : null}
-              </div>
-              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${CATEGORY_PILL_COLORS[t.category]}`}>
-                {CATEGORY_PILL_LABEL[t.category]}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <form onSubmit={submit} className="mt-3 flex items-center gap-2">
-          <Input
-            type="text"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Add a task…"
-            className="flex-1 text-[13px]"
-          />
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value as TaskCategory)}
-            className="h-9 rounded-lg border border-border-default bg-surface-1 px-2 text-[12px] text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
-            aria-label="Category"
-          >
-            {(Object.keys(CATEGORY_PILL_LABEL) as TaskCategory[]).map((c) => (
-              <option key={c} value={c}>
-                {CATEGORY_PILL_LABEL[c]}
-              </option>
-            ))}
-          </select>
-          <Button type="submit" size="icon" disabled={!draft.trim()}>
-            <Plus className="w-4 h-4" />
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+  const runs = runsQ.data?.runs ?? [];
+  const activeRun = runs.find((r) => r.status === 'dispatched' || r.status === 'running');
+  const doneRuns = runs.filter(
+    (r) => (r.status === 'succeeded' || r.status === 'completed') && new Date(r.createdAt).getTime() > lastSeen,
   );
-}
+  const workedMs = doneRuns.reduce((acc, r) => {
+    if (!r.startedAt || !r.finishedAt) return acc;
+    return acc + Math.max(0, new Date(r.finishedAt).getTime() - new Date(r.startedAt).getTime());
+  }, 0);
 
-// ============================================================================
-// Hermes Feed
-// ============================================================================
+  const openTasks = (tasksQ.data?.tasks ?? []).filter((t) => t.status !== 'done' && t.status !== 'cancelled');
+  const nextTask = [...openTasks].sort((a, b) => {
+    const da = a.dueAt ? new Date(a.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+    const db = b.dueAt ? new Date(b.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+    return da !== db ? da - db : (b.priority ?? 0) - (a.priority ?? 0);
+  })[0];
 
-const FEED_ICON: Record<string, { icon: React.ElementType; color: string }> = {
-  opportunity_discovered: { icon: Briefcase, color: 'text-emerald-600 bg-emerald-100' },
-  research_completed: { icon: FileText, color: 'text-purple-600 bg-purple-100' },
-  notification: { icon: Calendar, color: 'text-amber-600 bg-amber-100' },
-  task_finished: { icon: CheckCircle2, color: 'text-sky-600 bg-sky-100' },
-  priority_changed: { icon: TrendingUp, color: 'text-rose-600 bg-rose-100' },
-  object_created: { icon: Sparkles, color: 'text-slate-600 bg-slate-100' },
-};
-const FEED_ICON_DEFAULT: { icon: React.ElementType; color: string } = { icon: Sparkles, color: 'text-slate-600 bg-slate-100' };
+  // ---- briefing line ----
+  let statement = '';
+  if (user?.schedulerEnabled === false) {
+    statement = 'HERMES IS PAUSED — YOUR SCOUTS ARE SLEEPING.';
+  } else if (activeRun) {
+    statement = 'HERMES IS WORKING RIGHT NOW.';
+  } else if (workedMs > 0 || newSinceAway > 0) {
+    statement = workedMs > 0
+      ? `HERMES WORKED FOR ${formatDuration(workedMs)} — ${newSinceAway > 0 ? `${newSinceAway} THING${newSinceAway === 1 ? '' : 'S'} SINCE YOUR LAST VISIT.` : 'NOTHING CHANGED.'}`
+      : `ALL CAUGHT UP — ${newSinceAway} THING${newSinceAway === 1 ? '' : 'S'} SINCE YOUR LAST VISIT.`;
+  } else {
+    statement = 'ALL CAUGHT UP — HERMES IS AWAKE AND WATCHING.';
+  }
 
-function timeAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
-}
-
-function HermesFeedCard({ events }: { events: DashboardData['hermesFeed']['events'] }): React.JSX.Element {
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-start gap-2">
-            <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-text-secondary">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-[15px] font-semibold text-text-primary">Hermes Feed</h3>
-              <p className="text-[12px] text-text-tertiary">What I've been up to while you were away.</p>
-            </div>
-          </div>
-          <Link to="/feed" className="text-[12px] font-medium text-accent-text hover:underline flex items-center gap-0.5">
-            View all <span>→</span>
+    <section className="relative min-h-[250px] overflow-hidden bg-p5-ink-2 p-6 md:p-7 p5-cut-panel p5-anim-slide" style={{ animationDelay: '300ms' }}>
+      {/* Halftone texture — the red dot fill in the top-right corner */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: 'radial-gradient(rgba(213,0,28,0.35) 1.2px, transparent 1.2px)',
+          backgroundSize: '8px 8px',
+          backgroundPosition: 'top right',
+          maskImage: 'linear-gradient(to bottom left, black 0%, transparent 60%)',
+          WebkitMaskImage: 'linear-gradient(to bottom left, black 0%, transparent 60%)',
+        }}
+      />
+      <div className="relative">
+        <div className="flex items-center justify-between">
+          <div className="p5-kicker text-p5-text">HERMES BRIEFING</div>
+          <Link to="/feed" aria-label="Open Hermes briefing" className="flex h-10 w-10 items-center justify-center border border-white/30 text-p5-text hover:border-accent hover:text-accent transition">
+            <ArrowUpRight className="h-5 w-5" />
           </Link>
         </div>
-
-        <ul className="space-y-2.5">
-          {events.length === 0 ? (
-            <li className="text-[13px] text-text-tertiary py-2">Hermes is quiet. For now.</li>
-          ) : null}
-          {events.slice(0, 3).map((e) => {
-            const meta = FEED_ICON[e.kind] ?? FEED_ICON_DEFAULT;
-            const Icon = meta.icon;
-            return (
-              <li key={e.id} className="flex items-start gap-3">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${meta.color}`}>
-                  <Icon className="w-4 h-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] text-text-primary leading-snug">{e.title}</div>
-                  {e.body ? <div className="text-[12px] text-text-tertiary mt-0.5 line-clamp-1">{e.body}</div> : null}
-                </div>
-                <div className="text-[11px] text-text-quaternary shrink-0 mt-0.5">{timeAgo(e.createdAt)}</div>
-              </li>
-            );
-          })}
-        </ul>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ============================================================================
-// Knowledge Graph mini
-// ============================================================================
-
-const NODE_COLORS: Record<string, string> = {
-  project: '#38bdf8',
-  research: '#a78bfa',
-  discovery: '#fb923c',
-  decision: '#facc15',
-  opportunity: '#34d399',
-  learning_path: '#f472b6',
-  note: '#94a3b8',
-  collection: '#22d3ee',
-};
-
-function MiniGraph({ nodes, links }: { nodes: DashboardData['graph']['nodes']; links: DashboardData['graph']['links'] }): React.JSX.Element {
-  const W = 320;
-  const H = 180;
-  const cx = W / 2;
-  const cy = H / 2;
-  const placed = React.useMemo(() => {
-    const n = Math.max(nodes.length, 1);
-    return nodes.map((node, i) => {
-      const angle = (i / n) * Math.PI * 2;
-      const r = Math.min(W, H) * 0.34;
-      return { ...node, x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
-    });
-  }, [nodes]);
-  const idMap = React.useMemo(() => new Map(placed.map((n) => [n.id, n])), [placed]);
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
-      {links.map((l, i) => {
-        const a = idMap.get(l.source);
-        const b = idMap.get(l.target);
-        if (!a || !b) return null;
-        return (
-          <line
-            key={i}
-            x1={a.x}
-            y1={a.y}
-            x2={b.x}
-            y2={b.y}
-            stroke="#d1d5db"
-            strokeWidth={Math.max(0.5, l.confidence * 1.5)}
-          />
-        );
-      })}
-      {placed.map((n) => (
-        <g key={n.id}>
-          <circle cx={n.x} cy={n.y} r="9" fill={NODE_COLORS[n.type] ?? '#94a3b8'} />
-          <text x={n.x} y={n.y - 14} textAnchor="middle" className="fill-text-secondary" style={{ fontSize: 9, fontFamily: 'var(--font-sans)' }}>
-            {n.title.length > 14 ? `${n.title.slice(0, 12)}…` : n.title}
-          </text>
-        </g>
-      ))}
-    </svg>
-  );
-}
-
-function KnowledgeGraphCard({ data }: { data: DashboardData['graph'] }): React.JSX.Element {
-  return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex items-start gap-2">
-            <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-text-secondary">
-              <Network className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-[15px] font-semibold text-text-primary">Knowledge Graph</h3>
-              <p className="text-[12px] text-text-tertiary">Your ideas, projects & connections.</p>
-            </div>
-          </div>
-          <Link to="/graph" className="text-[12px] font-medium text-accent-text hover:underline">
-            View graph
-          </Link>
+        {/* Big quotation marks */}
+        <div className="mt-3 flex items-start gap-3">
+          <span className="text-white/20 text-[64px] leading-[0.65] font-serif select-none shrink-0">&ldquo;</span>
+          <p className="font-p5-serif text-[clamp(20px,2.3vw,30px)] leading-[1.08] text-p5-text mt-1 max-w-[520px]">
+            {statement}
+          </p>
         </div>
-        {data.nodes.length === 0 ? (
-          <div className="text-[13px] text-text-tertiary py-8 text-center">No graph data yet.</div>
-        ) : (
-          <MiniGraph nodes={data.nodes} links={data.links} />
-        )}
-      </CardContent>
-    </Card>
+        {/* task recommendation */}
+        {nextTask ? (
+            <div className="mt-5 border-l-2 border-accent pl-3 text-[12px] leading-relaxed text-p5-muted">
+              <div>Today you should finish:</div>
+              <div className="font-bold uppercase tracking-wide text-accent">{nextTask.title}</div>
+              <div>{taskReason(nextTask)}.</div>
+            </div>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
 // ============================================================================
-// Scouting Inbox card
+// Latest — a terse ticker (no panel in the mockup, but kept for data richness)
 // ============================================================================
 
-const OPP_LABEL: Record<OpportunityCategory, string> = {
-  job: 'Job Opportunities',
-  startup: 'Startups to Watch',
-  research_paper: 'Research Papers',
-  saas_idea: 'SaaS Ideas',
-  iot: 'IoT Opportunities',
-  grant: 'Grants',
-  competition: 'Competitions',
-  other: 'Other',
-};
+// ============================================================================
+// Upcoming — date blocks
+// ============================================================================
 
-const OPP_ICON: Record<OpportunityCategory, { icon: React.ElementType; color: string }> = {
-  job: { icon: Briefcase, color: 'text-emerald-600 bg-emerald-100' },
-  startup: { icon: TrendingUp, color: 'text-purple-600 bg-purple-100' },
-  research_paper: { icon: FileText, color: 'text-sky-600 bg-sky-100' },
-  saas_idea: { icon: Lightbulb, color: 'text-amber-600 bg-amber-100' },
-  iot: { icon: Radar, color: 'text-sky-600 bg-sky-100' },
-  grant: { icon: Briefcase, color: 'text-rose-600 bg-rose-100' },
-  competition: { icon: Target, color: 'text-pink-600 bg-pink-100' },
-  other: { icon: Circle, color: 'text-slate-600 bg-slate-100' },
-};
-
-function ScoutingInboxCard({ buckets }: { buckets: DashboardData['opportunities']['categories'] }): React.JSX.Element {
-  const visibleCategories: OpportunityCategory[] = ['job', 'startup', 'research_paper', 'saas_idea', 'iot'];
-  const visible = visibleCategories.map((c) => ({
-    category: c,
-    total: buckets.find((b) => b.category === c)?.total ?? 0,
-    unread: buckets.find((b) => b.category === c)?.unread ?? 0,
-  }));
-
+function UpcomingPanel({ items }: { items: Upcoming[] }): React.JSX.Element {
+  const visible = items.slice(0, 4);
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-start gap-2">
-            <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-text-secondary">
-              <Radar className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-[15px] font-semibold text-text-primary">Scouting Inbox</h3>
-              <p className="text-[12px] text-text-tertiary">Opportunities, research & leads.</p>
-            </div>
-          </div>
-          <Link to="/scouting" className="text-[12px] font-medium text-accent-text hover:underline flex items-center gap-0.5">
-            View all <span>→</span>
-          </Link>
-        </div>
-
-        <ul className="space-y-1.5">
-          {visible.map((b) => {
-            const meta = OPP_ICON[b.category];
-            const Icon = meta.icon;
-            return (
-              <li
-                key={b.category}
-                className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border-default bg-surface-1 hover:border-border-strong transition cursor-pointer"
-              >
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${meta.color}`}>
-                  <Icon className="w-4 h-4" />
-                </div>
-                <div className="flex-1 min-w-0 text-[13px] text-text-primary">{OPP_LABEL[b.category]}</div>
-                {b.unread > 0 ? (
-                  <Badge tone="emerald" variant="soft">{b.unread} new</Badge>
-                ) : (
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-surface-2 text-text-quaternary">none</span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-        <Link to="/scouting" className="mt-4 inline-flex items-center gap-1 text-[12px] font-medium text-accent-text hover:underline">
-          Go to inbox <span>→</span>
+    <section className="relative min-h-[250px] overflow-hidden bg-p5-ink-2 p-6 p5-cut-panel p5-anim-slide" style={{ animationDelay: '380ms' }}>
+      <div className="mb-5 flex items-center justify-between">
+        <div className="p5-kicker text-p5-text">UPCOMING</div>
+        <Link to="/calendar" className="text-[11px] font-black tracking-[0.15em] text-accent hover:opacity-80 transition flex items-center gap-1">
+          CALENDAR <ArrowRight className="w-3 h-3" />
         </Link>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ============================================================================
-// Upcoming
-// ============================================================================
-
-function fmtMonthDay(iso: string): { month: string; day: string } {
-  const d = new Date(iso);
-  return {
-    month: d.toLocaleString(undefined, { month: 'short' }).toUpperCase(),
-    day: String(d.getDate()),
-  };
-}
-
-function daysUntil(iso: string): number {
-  const ms = new Date(iso).getTime() - Date.now();
-  return Math.max(0, Math.ceil(ms / (24 * 60 * 60_000)));
-}
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-function UpcomingCard({ items }: { items: Upcoming[] }): React.JSX.Element {
-  const visible = items.slice(0, 5);
-  return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-start gap-2">
-            <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-text-secondary">
-              <CalendarDays className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-[15px] font-semibold text-text-primary">Upcoming</h3>
-              <p className="text-[12px] text-text-tertiary">Your important dates & deadlines.</p>
-            </div>
-          </div>
-          <Link to="/calendar" className="text-[12px] font-medium text-accent-text hover:underline flex items-center gap-0.5">
-            View calendar <span>→</span>
-          </Link>
-        </div>
-
-        <ul className="space-y-2">
-          {visible.length === 0 ? (
-            <li className="text-[13px] text-text-tertiary py-2">Nothing on the horizon.</li>
-          ) : null}
-          {visible.map((u) => {
-            const { month, day } = fmtMonthDay(u.occursAt);
-            const days = daysUntil(u.occursAt);
+      </div>
+      {visible.length === 0 ? (
+        <div className="text-[12px] text-p5-muted py-3">Nothing scheduled. The horizon is clear.</div>
+      ) : (
+        <ul className="divide-y divide-p5-line/50">
+           {visible.map((u) => {
+            const d = new Date(u.occursAt);
+            const month = d.toLocaleString(undefined, { month: 'short' }).toUpperCase();
+            const day = String(d.getDate());
+            const days = Math.max(0, Math.ceil((d.getTime() - Date.now()) / 86_400_000));
             return (
-              <li key={u.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border-default bg-surface-1 hover:border-border-strong transition">
-                <div className="w-11 h-11 rounded-lg bg-sky-50 border border-sky-100 flex flex-col items-center justify-center shrink-0">
-                  <div className="text-[9px] uppercase tracking-wider text-sky-600 font-semibold leading-none">{month}</div>
-                  <div className="text-[15px] font-bold text-sky-700 leading-none mt-0.5">{day}</div>
+              <li key={u.id} className="mb-1 flex items-center gap-3 border border-white/20 px-3 py-2.5 last:mb-0">
+                <div className="flex w-12 shrink-0 flex-col items-center justify-center border-r border-white/20 pr-3">
+                  <span className="text-[10px] font-mono font-bold leading-none text-accent">{month}</span>
+                  <span className="mt-1 text-[22px] font-black leading-none text-p5-text">{day}</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] text-text-primary">{u.title}</div>
-                  <div className="text-[11px] text-text-tertiary mt-0.5">
-                    {u.subtitle ?? fmtDate(u.occursAt)}
-                  </div>
+                  <div className="truncate text-[13px] font-bold text-p5-text">{u.title}</div>
+                  <div className="font-mono text-[10px] text-p5-muted">IN {days === 0 ? 'TODAY' : `${days} DAY${days === 1 ? '' : 'S'}`}</div>
                 </div>
-                <Badge tone={days <= 30 ? 'emerald' : 'amber'} variant="soft">
-                  In {days} days
-                </Badge>
               </li>
             );
           })}
         </ul>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ============================================================================
-// Quick Capture
-// ============================================================================
-
-function QuickCaptureBar({
-  onAddTask,
-  onAddUpcoming,
-  onAddOpportunity,
-}: {
-  onAddTask: (title: string, category: TaskCategory) => void;
-  onAddUpcoming: (title: string, occursAt: string) => void;
-  onAddOpportunity: (title: string, category: OpportunityCategory) => void;
-}): React.JSX.Element {
-  const [text, setText] = React.useState('');
-  const [kind, setKind] = React.useState<'task' | 'upcoming' | 'opportunity'>('task');
-  const [oppCat, setOppCat] = React.useState<OpportunityCategory>('job');
-  const [date, setDate] = React.useState('');
-
-  const submit = (e: React.FormEvent): void => {
-    e.preventDefault();
-    const t = text.trim();
-    if (!t) return;
-    if (kind === 'task') onAddTask(t, 'other');
-    else if (kind === 'upcoming' && date) onAddUpcoming(t, new Date(date).toISOString());
-    else if (kind === 'opportunity') onAddOpportunity(t, oppCat);
-    setText('');
-    setDate('');
-  };
-
-  return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-5">
-        <div className="flex items-start gap-2 mb-3">
-          <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-text-secondary">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-[15px] font-semibold text-text-primary">Quick Capture</h3>
-            <p className="text-[12px] text-text-tertiary">Capture ideas, tasks or anything…</p>
-          </div>
-        </div>
-        <form onSubmit={submit} className="flex flex-wrap items-center gap-2">
-          <Input
-            type="text"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Write a note or task…"
-            className="flex-1 min-w-[180px] text-[13px]"
-          />
-          <select
-            value={kind}
-            onChange={(e) => setKind(e.target.value as 'task' | 'upcoming' | 'opportunity')}
-            className="h-9 rounded-lg border border-border-default bg-surface-1 px-2 text-[12px] text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
-          >
-            <option value="task">Task</option>
-            <option value="upcoming">Upcoming</option>
-            <option value="opportunity">Opportunity</option>
-          </select>
-          {kind === 'upcoming' ? (
-            <input
-              type="datetime-local"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-9 rounded-lg border border-border-default bg-surface-1 px-2 text-[12px] text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
-            />
-          ) : null}
-          {kind === 'opportunity' ? (
-            <select
-              value={oppCat}
-              onChange={(e) => setOppCat(e.target.value as OpportunityCategory)}
-              className="h-9 rounded-lg border border-border-default bg-surface-1 px-2 text-[12px] text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
-            >
-              {(Object.keys(OPP_LABEL) as OpportunityCategory[]).map((c) => (
-                <option key={c} value={c}>
-                  {OPP_LABEL[c]}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          <Button type="submit" size="icon" disabled={!text.trim() || (kind === 'upcoming' && !date)}>
-            <Plus className="w-4 h-4" />
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ============================================================================
-// Chat with Hermes card
-// ============================================================================
-
-function ChatWithHermesCard(): React.JSX.Element {
-  return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-5 flex items-center justify-between gap-4">
-        <div>
-          <h3 className="text-[15px] font-semibold text-text-primary">Chat with Hermes</h3>
-          <p className="text-[12px] text-text-tertiary">Ask anything. Get answers.</p>
-        </div>
-        <Button variant="outline" size="sm" className="gap-2">
-          <MessageCircle className="w-4 h-4" />
-          Start chat
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ============================================================================
-// Send-to-Hermes action bar
-// ============================================================================
-
-function SendToHermesBar({ unsentCount, onSend, sending }: { unsentCount: number; onSend: () => void; sending: boolean }): React.JSX.Element | null {
-  if (unsentCount === 0) return null;
-  return (
-    <Card className="border-amber-200 bg-amber-50 overflow-hidden">
-      <CardContent className="p-4 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
-          <Send className="w-4 h-4" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-semibold text-text-primary">
-            {unsentCount} {unsentCount === 1 ? 'task' : 'tasks'} ready to send to Hermes
-          </div>
-          <div className="text-[12px] text-text-tertiary">
-            Hermes will be notified of your new tasks in a single dispatch.
-          </div>
-        </div>
-        <Button onClick={onSend} disabled={sending} size="sm">
-          {sending ? 'Sending…' : 'Send to Hermes'}
-        </Button>
-      </CardContent>
-    </Card>
+      )}
+      {visible.length > 0 ? (
+        <Link to="/calendar" className="mt-3 text-[11px] font-black tracking-[0.15em] text-accent hover:opacity-80 transition flex items-center gap-1">
+          VIEW FULL CALENDAR <ArrowRight className="w-3 h-3" />
+        </Link>
+      ) : null}
+    </section>
   );
 }
 
@@ -661,6 +268,7 @@ export function DashboardPage(): React.JSX.Element {
   const { user } = useAuth();
   const { url: serverUrl, connected } = useServer();
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard'],
@@ -671,76 +279,310 @@ export function DashboardPage(): React.JSX.Element {
 
   const createTaskMut = useMutation({
     mutationFn: (input: { title: string; category: TaskCategory }) => api.createTask(input),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard'] }),
-  });
-  const updateTaskMut = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: TaskStatus }) => api.updateTask(id, { status }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard'] }),
-  });
-  const sendBatchMut = useMutation({
-    mutationFn: (taskIds: string[]) => api.sendTasksToHermes(taskIds),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard'] }),
-  });
-  const createUpcomingMut = useMutation({
-    mutationFn: (input: { title: string; occursAt: string }) => api.createUpcoming({ title: input.title, occursAt: input.occursAt }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard'] }),
-  });
-  const createOppMut = useMutation({
-    mutationFn: (input: { title: string; category: OpportunityCategory }) =>
-      api.createObject({ type: 'opportunity', title: input.title, status: 'open', body: { kind: input.category } }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['dashboard'] });
+      void qc.invalidateQueries({ queryKey: ['tasks', 'mission'] });
+    },
   });
 
-  const unsentTaskIds = (data?.tasks.today ?? []).filter((t) => t.sentToHermesAt === null).map((t) => t.id);
-  const handleSendToHermes = (): void => { if (unsentTaskIds.length === 0) return; sendBatchMut.mutate(unsentTaskIds); };
-  const handleAddTask = (title: string, category: TaskCategory): void => createTaskMut.mutate({ title, category });
-  const handleAddUpcoming = (title: string, occursAt: string): void => createUpcomingMut.mutate({ title, occursAt });
-  const handleAddOpportunity = (title: string, category: OpportunityCategory): void => createOppMut.mutate({ title, category });
-  const handleStatusChange = (id: string, status: TaskStatus): void => updateTaskMut.mutate({ id, status });
+  const presence = useHermesPresence();
+  const lastSeen = useLastSeen();
+  const [askText, setAskText] = React.useState('');
+  const [taskText, setTaskText] = React.useState('');
+  const [showTaskInput, setShowTaskInput] = React.useState(false);
+  const [err, setErr] = React.useState<string | null>(null);
+
+  const hermesInfo = useQuery({
+    queryKey: ['hermes-info'],
+    queryFn: () => api.hermesInfo(),
+    enabled: connected,
+    staleTime: 60 * 60 * 1000,
+  });
+
+  const [sending, setSending] = React.useState(false);
+
+  async function send(): Promise<void> {
+    const text = askText.trim();
+    if (!text || sending) return;
+    const info = hermesInfo.data;
+    if (!info) { setErr('Hermes gateway not reachable.'); return; }
+    setSending(true);
+    setErr(null);
+    try {
+      const id = `web_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      await api.hermesCreateSession(info, { id, source: 'api_server' });
+      await api.hermesChat(info, id, { message: text });
+      navigate(`/chat/${id}`);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  useSse({ onFeed: () => qc.invalidateQueries({ queryKey: ['dashboard'] }) });
 
   const userName = user?.displayName ?? 'there';
   void serverUrl;
 
-  const tasks = data?.tasks.today ?? [];
+  const newSinceAway = (data?.hermesFeed.events ?? []).filter(
+    (e) => new Date(e.createdAt).getTime() > lastSeen,
+  ).length;
+
+  const buckets = data?.opportunities.categories ?? [];
+  const totalOpps = buckets.reduce((a, b) => a + (b.total ?? 0), 0);
+  const tasksToday = data?.tasks.today.length ?? 0;
+
   const upcoming = [
     ...(data?.upcoming.next7Days ?? []),
     ...(data?.upcoming.next30Days ?? []),
     ...(data?.upcoming.next90Days ?? []),
   ];
 
+  const addTask = (): void => {
+    const t = taskText.trim();
+    if (!t) return;
+    createTaskMut.mutate({ title: t, category: 'work' });
+    setTaskText('');
+  };
+
+  const now = new Date();
+  const hour = now.getHours();
+  const greet = hour < 5 ? 'WORKING LATE' : hour < 12 ? 'GOOD MORNING' : hour < 17 ? 'GOOD AFTERNOON' : 'GOOD EVENING';
+  const dateStr = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase();
+
   return (
-    <div className="min-h-screen flex bg-page text-text-primary">
-      <Sidebar activePath="/" className="hidden lg:flex" />
-      <main className="flex-1 p-6 lg:p-8 max-w-[1280px] mx-auto w-full">
-        <Header userName={userName} />
+    <div className="min-h-screen flex bg-p5-cream text-p5-dark">
+      <NavRail activePath="/" />
 
-        {isLoading ? (
-          <div className="text-center text-text-tertiary py-12">Loading dashboard…</div>
-        ) : error ? (
-          <div className="text-center text-status-failed py-12">
-            Failed to load dashboard. {error instanceof Error ? error.message : 'Unknown error'}
-          </div>
-        ) : data ? (
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-            <div className="xl:col-span-2 space-y-5">
-              <TodaysMissionCard tasks={tasks} onAddTask={handleAddTask} onStatusChange={handleStatusChange} />
-              <SendToHermesBar unsentCount={unsentTaskIds.length} onSend={handleSendToHermes} sending={sendBatchMut.isPending} />
-              <HermesFeedCard events={data.hermesFeed.events} />
-              <KnowledgeGraphCard data={data.graph} />
-            </div>
-            <div className="space-y-5">
-              <UpcomingCard items={upcoming} />
-              <ScoutingInboxCard buckets={data.opportunities.categories} />
-              <QuickCaptureBar onAddTask={handleAddTask} onAddUpcoming={handleAddUpcoming} onAddOpportunity={handleAddOpportunity} />
-              <ChatWithHermesCard />
-            </div>
-          </div>
-        ) : null}
+      <main className="flex-1 min-w-0 overflow-y-auto px-6 py-8 md:px-10 lg:px-10 lg:py-10">
+        <div className="mx-0 max-w-[1128px]">
 
-        <footer className="mt-10 text-center text-[11px] text-text-quaternary">
-          HermieOS · {new Date().getFullYear()} · Dashboard v3
-        </footer>
+          {/* ─── Header: serif greeting + actions ─── */}
+          <header className="relative min-h-[222px]">
+            <div className="min-w-0 pt-2">
+              <div className="p5-kicker text-p5-dark">{dateStr}</div>
+              <h1 className="mt-5">
+                <span className="block font-p5-serif text-[clamp(58px,6.2vw,94px)] leading-[0.86] text-p5-dark">
+                  {greet},
+                </span>
+                <span className="relative mt-2 inline-block font-p5-serif text-[clamp(58px,6.2vw,94px)] leading-[0.86] text-p5-dark">
+                  {userName.toUpperCase()}.
+                  <span className="absolute -bottom-3 left-0 h-[7px] w-full bg-accent" />
+                </span>
+              </h1>
+            </div>
+            <div className="absolute right-0 top-0 flex items-center gap-3">
+              <P5PresencePill presence={presence} />
+              <Link
+                to="/chat"
+                className="inline-flex items-center gap-2 text-[11px] font-black tracking-[0.12em] px-4 py-2.5 bg-accent text-white hover:bg-accent-hover transition"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                CHAT WITH HERMES
+              </Link>
+              <button className="w-9 h-9 border border-p5-dark-line flex items-center justify-center text-p5-dark-muted hover:text-p5-dark transition" aria-label="Search">
+                <Search className="w-4 h-4" />
+              </button>
+              <button className="w-9 h-9 border border-p5-dark-line flex items-center justify-center text-p5-dark-muted hover:text-p5-dark transition relative" aria-label="Notifications">
+                <Bell className="w-4 h-4" />
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-accent" />
+              </button>
+            </div>
+          </header>
+
+          {/* ─── Ask Hermes bar ─── */}
+          <section className="relative mt-5 min-h-[174px] overflow-hidden bg-p5-ink-2 p-6 md:p-7 p5-cut-panel p5-anim-slide" style={{ animationDelay: '60ms' }}>
+            {/* halftone texture on the ask bar */}
+            <div className="absolute inset-0 pointer-events-none opacity-30" style={{
+              backgroundImage: 'radial-gradient(rgba(255,255,255,0.07) 1px, transparent 1.5px)',
+              backgroundSize: '8px 8px',
+            }} />
+            <div className="absolute inset-y-0 left-0 w-1 bg-accent" />
+            <div className="relative flex items-center gap-4">
+              <div className="w-10 h-10 bg-accent text-white flex items-center justify-center shrink-0">
+                <Bot className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="p5-kicker text-accent">ASK HERMES</div>
+                <form className="mt-1.5 flex items-center gap-3" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+                  <input
+                    value={askText}
+                    onChange={(e) => setAskText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
+                    placeholder="Research, summarize, plan, dig into a finding…"
+                    className="flex-1 min-w-0 bg-transparent border-0 border-b border-p5-line focus:border-accent outline-none text-[14px] text-p5-text placeholder:text-p5-muted pb-1"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!askText.trim() || sending}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-black tracking-[0.12em] px-4 py-2 bg-accent text-white hover:bg-accent-hover transition disabled:opacity-40 shrink-0"
+                  >
+                    {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    SEND
+                  </button>
+                </form>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {['What should I focus on today?', 'Find me a research paper I would like', 'Summarize what my scouts found'].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setAskText(s)}
+                      className="border border-white/25 px-2 py-1 text-[10px] font-mono text-p5-muted hover:border-white/60 hover:text-p5-text transition"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {err ? <div className="relative mt-2 text-[12px] text-accent font-mono">{err}</div> : null}
+          </section>
+
+          {isLoading ? (
+            <div className="text-center text-p5-dark-muted py-16 font-mono text-[12px]">LOADING YOUR WORKSPACE…</div>
+          ) : error ? (
+            <div className="text-center text-accent py-16 font-mono text-[12px]">
+              FAILED TO LOAD YOUR WORKSPACE.
+            </div>
+          ) : data ? (
+            <>
+              {/* ─── Three tiles ─── */}
+              <section className="mt-6">
+                <div className="mb-4 p5-kicker text-p5-dark-muted">3 THINGS WAITING FOR YOU</div>
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+                  {/* RESEARCH — dark card, red number */}
+                  <Link
+                    to="/scouting/findings"
+                    className="relative min-h-[208px] overflow-hidden bg-p5-ink-2 p-6 p5-cut-panel p5-hover-lift p5-anim-slide group"
+                    style={{ animationDelay: '120ms' }}
+                  >
+                    <div className="absolute inset-y-0 left-0 w-1 bg-accent" />
+                    <Search className="absolute -right-2 -bottom-2 w-24 h-24 text-p5-ink-3 opacity-60 -rotate-12 pointer-events-none" />
+                    {newSinceAway > 0 ? (
+                      <span className="absolute top-4 right-4 flex items-center gap-1.5">
+                        <span className="w-2 h-2 bg-accent rounded-full animate-pulse" />
+                        <span className="p5-kicker text-accent">NEW</span>
+                      </span>
+                    ) : null}
+                    <div className="p5-kicker text-accent">RESEARCH</div>
+                    <div className="mt-2 flex items-center gap-4">
+                      <P5Number value={newSinceAway} className="text-accent" />
+                      <p className="max-w-[150px] text-[12px] leading-snug text-p5-muted">
+                      {newSinceAway > 0
+                        ? 'New findings are ready. What the scouts brought back while you were away.'
+                        : 'No new findings. The scouts are watching.'}
+                      </p>
+                    </div>
+                    <div className="absolute bottom-4 left-6 flex items-center gap-1 text-[11px] font-black tracking-[0.12em] text-accent group-hover:opacity-80 transition">
+                      OPEN THE DECK <ArrowRight className="w-3 h-3" />
+                    </div>
+                  </Link>
+
+                  {/* TASKS — white card */}
+                  <div
+                    className="relative min-h-[208px] overflow-hidden border border-black/20 border-b-4 border-b-p5-ink bg-p5-panel p-6 p5-cut-panel p5-hover-lift p5-anim-slide group"
+                    style={{ animationDelay: '180ms' }}
+                  >
+                    <CheckCircle2 className="absolute -right-2 -bottom-2 w-24 h-24 text-black/[0.04] pointer-events-none" />
+                    <div className="flex items-center justify-between">
+                      <div className="p5-kicker text-p5-ink/50">TASKS</div>
+                      <button
+                        type="button"
+                        aria-label="Add task for today"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setShowTaskInput((current) => !current);
+                        }}
+                        className="relative z-10 text-[10px] font-black tracking-[0.12em] text-p5-ink/55 hover:text-accent transition"
+                      >
+                        + ADD TASK
+                      </button>
+                    </div>
+                    <div className="mt-2 flex items-center gap-4">
+                      <P5Number value={tasksToday} className="text-p5-ink" />
+                      <p className="max-w-[150px] text-[12px] leading-snug text-p5-ink/70">
+                      {tasksToday === 0
+                        ? 'No tasks today. Nice. Time to build something great.'
+                        : `${tasksToday} task${tasksToday === 1 ? '' : 's'} on the board.`}
+                      </p>
+                    </div>
+                    {showTaskInput ? (
+                      <form className="relative z-10 mt-2 flex items-center gap-2" onSubmit={(event) => { event.preventDefault(); addTask(); }} onClick={(event) => event.stopPropagation()}>
+                        <input
+                          autoFocus
+                          value={taskText}
+                          onChange={(event) => setTaskText(event.target.value)}
+                          placeholder="Add a task for today…"
+                          className="min-w-0 flex-1 border-b border-black/25 bg-transparent px-0 py-1 text-[11px] text-p5-ink outline-none placeholder:text-p5-ink/45 focus:border-accent"
+                        />
+                        <button type="submit" disabled={!taskText.trim() || createTaskMut.isPending} className="text-[10px] font-black tracking-[0.12em] text-accent">ADD</button>
+                      </form>
+                    ) : null}
+                    <Link to="/mission" className="absolute bottom-4 left-6 flex items-center gap-1 text-[11px] font-black tracking-[0.12em] text-p5-ink/80 group-hover:text-p5-ink transition">
+                      OPEN MISSIONS <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </div>
+
+                  {/* APPROVALS — white card, yellow number */}
+                  <Link
+                    to="/opportunities"
+                    className="relative min-h-[208px] overflow-hidden border border-black/20 border-b-4 border-b-[#e2a700] bg-p5-panel p-6 p5-cut-panel p5-hover-lift p5-anim-slide group"
+                    style={{ animationDelay: '240ms' }}
+                  >
+                    <AlertCircle className="absolute -right-2 -bottom-2 w-24 h-24 text-black/[0.04] pointer-events-none" />
+                    <div className="p5-kicker" style={{ color: '#d97706' }}>APPROVALS</div>
+                    <div className="mt-2 flex items-center gap-4">
+                      <P5Number value={totalOpps} className="text-[#d97706]" />
+                      <p className="max-w-[150px] text-[12px] leading-snug text-p5-ink/70">
+                      Waiting for your call. Opportunities need your decision.
+                      </p>
+                    </div>
+                    <div className="absolute bottom-4 left-6 flex items-center gap-1 text-[11px] font-black tracking-[0.12em] transition" style={{ color: '#d97706' }}>
+                      VIEW & TRIAGE <ArrowRight className="w-3 h-3" />
+                    </div>
+                  </Link>
+                </div>
+              </section>
+
+              {/* ─── Briefing + Upcoming side by side ─── */}
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mt-6">
+                <div className="lg:col-span-3">
+                  <P5Briefing lastSeen={lastSeen} newSinceAway={newSinceAway} />
+                </div>
+                <div className="lg:col-span-2">
+                  <UpcomingPanel items={upcoming} />
+                </div>
+              </div>
+            </>
+          ) : null}
+
+          <footer className="mt-12 text-center text-[10px] font-mono tracking-[0.25em] text-p5-dark-muted">
+            HERMIEOS &middot; A PLACE TO THINK WITH HERMES
+          </footer>
+        </div>
       </main>
+    </div>
+  );
+}
+
+// ============================================================================
+// Presence pill
+// ============================================================================
+
+function P5PresencePill({ presence }: { presence: HermesPresence }): React.JSX.Element {
+  const meta: Record<HermesPresence, { label: string; dot: string }> = {
+    working: { label: 'HERMES IS WORKING', dot: 'bg-accent animate-pulse' },
+    idle: { label: 'HERMES IS ONLINE', dot: 'bg-accent' },
+    paused: { label: 'HERMES IS PAUSED', dot: 'bg-amber-500' },
+    unknown: { label: 'HERMES STATUS UNKNOWN', dot: 'bg-p5-muted' },
+  };
+  const m = meta[presence];
+  return (
+    <div className="inline-flex items-center gap-2 border border-p5-dark-line px-3 py-2 text-[11px] font-black tracking-[0.12em] text-p5-dark">
+      <span className={cn('w-2 h-2 rounded-full', m.dot)} />
+      {m.label}
     </div>
   );
 }

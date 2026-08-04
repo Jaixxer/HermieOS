@@ -19,11 +19,6 @@ import {
   Code,
   Hash,
   Code2,
-  Eye,
-  Heart,
-  Bookmark,
-  BellOff,
-  Archive,
   MessageSquare,
 } from 'lucide-react';
 import { api } from '../api';
@@ -50,33 +45,16 @@ export function ObjectDetailPage(): React.JSX.Element {
     queryFn: () => api.object(id),
   });
 
-  const archive = useMutation({
-    mutationFn: () => api.archiveObject(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['object', id] });
-      qc.invalidateQueries({ queryKey: ['feed'] });
-      nav('/');
-    },
-  });
-
   if (isLoading) {
     return <Loading text="Loading…" />;
   }
   if (error || !data) return <NotFound />;
 
   const obj = data.object;
-  const isOpportunity = obj.type === 'opportunity';
 
   return (
     <>
-      <ObjectHeader
-        obj={obj}
-        isOpportunity={isOpportunity}
-        onBack={() => nav(-1)}
-        onArchive={() => {
-          if (window.confirm('Archive this object?')) archive.mutate();
-        }}
-      />
+      <ObjectHeader obj={obj} onBack={() => nav(-1)} />
 
       <div className="border-b border-border-default">
         <nav className="flex gap-1">
@@ -133,14 +111,10 @@ function NotFound(): React.JSX.Element {
 
 function ObjectHeader({
   obj,
-  isOpportunity,
   onBack,
-  onArchive,
 }: {
   obj: import('../api').ObjectDetail;
-  isOpportunity: boolean;
   onBack: () => void;
-  onArchive: () => void;
 }): React.JSX.Element {
   return (
     <div className="pt-6 pb-4 border-b border-border-default">
@@ -194,11 +168,6 @@ function ObjectHeader({
             <MessageSquare className="w-3.5 h-3.5" />
             Discuss
           </Link>
-          {!obj.archivedAt ? (
-            <Button variant="ghost" size="sm" onClick={onArchive}>
-              Archive
-            </Button>
-          ) : null}
         </div>
       </div>
     </div>

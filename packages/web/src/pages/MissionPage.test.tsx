@@ -147,6 +147,54 @@ describe('MissionPage', () => {
     expect(due.getDate()).toBe(tomorrow.getDate());
   });
 
+  it('delegates a task to Hermes with context from the dialog', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'listTasks').mockResolvedValue({ tasks: [makeTask()], hasMore: false });
+    const delegateSpy = vi.spyOn(api, 'delegateTask').mockResolvedValue({ sessionId: 'task-t-1', delegated: true });
+
+    renderPage();
+    const delegateBtn = await screen.findByRole('button', { name: 'Delegate to Hermes' });
+    await user.click(delegateBtn);
+
+    // Dialog opens with the task title + optional context box.
+    expect(screen.getByText(/The task stays on your mission/)).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText(/Context \(optional\)/), 'Board wants it Friday, one page max');
+    await user.click(screen.getByRole('button', { name: 'Delegate' }));
+
+    await waitFor(() => {
+      expect(delegateSpy).toHaveBeenCalledWith('t-1', {
+        context: 'Board wants it Friday, one page max',
+      });
+    });
+  });
+
+  it('delegates without context when the box is left empty', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'listTasks').mockResolvedValue({ tasks: [makeTask()], hasMore: false });
+    const delegateSpy = vi.spyOn(api, 'delegateTask').mockResolvedValue({ sessionId: 'task-t-1', delegated: true });
+
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Delegate to Hermes' }));
+    await user.click(screen.getByRole('button', { name: 'Delegate' }));
+
+    await waitFor(() => {
+      expect(delegateSpy).toHaveBeenCalledWith('t-1', { context: undefined });
+    });
+  });
+
+  it('shows the delegated state and a link to the conversation once sent', async () => {
+    vi.spyOn(api, 'listTasks').mockResolvedValue({
+      tasks: [makeTask({ sentToHermesAt: new Date().toISOString() })],
+      hasMore: false,
+    });
+    renderPage();
+    expect(await screen.findByText('Delegated to Hermes')).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'Open Hermes conversation' });
+    expect(link).toHaveAttribute('href', '/chat/task-t-1');
+    // No delegate button for an already-delegated task.
+    expect(screen.queryByRole('button', { name: 'Delegate to Hermes' })).not.toBeInTheDocument();
+  });
+
   it('adds a task via the quick-add form', async () => {
     const user = userEvent.setup();
     const createSpy = vi.spyOn(api, 'createTask').mockResolvedValue({ task: makeTask() });

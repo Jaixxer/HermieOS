@@ -21,7 +21,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { HermesClient } from '@hermieos/gateway';
-import { getObject, type ObjectRow } from '@hermieos/mcp/src/data/objects.js';
+import { getObject } from '@hermieos/mcp/src/data/objects.js';
+import { ensureGatewaySession, gatewayFromEnv } from '../gateway-sessions.js';
 import { recordFeedback } from '@hermieos/mcp/src/data/feedback.js';
 import { createRun, markRunDispatched } from '@hermieos/mcp/src/data/runs.js';
 import {
@@ -39,18 +40,6 @@ const followUpBodySchema = z.object({
 
 const HERMIEOS_WORKER_INSTRUCTIONS =
   'You are the HermieOS background worker. Load the `hermieos` skill with skill_view("hermieos") and follow its instructions exactly. Route the dispatch envelope to the sub-skill it specifies, and use only the mcp_hermieos_* tools to record state changes. Be terse.';
-
-/**
- * Build a HermesClient from env, mirroring the scheduler's config.
- * The gateway is shared: one API_SERVER_KEY for chat, the user's
- * bearer for runs is per-user (runs embed it via the run dispatch).
- */
-export function gatewayFromEnv(): HermesClient | null {
-  const baseUrl = process.env.HERMES_GATEWAY_URL;
-  const apiKey = process.env.HERMES_API_KEY ?? process.env.HERMES_GATEWAY_KEY;
-  if (!baseUrl || !apiKey) return null;
-  return new HermesClient({ baseUrl, apiKey, timeoutMs: 15_000, maxRetries: 0 });
-}
 
 /** Deterministic session id for a finding's conversation. */
 export function findingSessionId(objectId: string): string {
@@ -199,7 +188,7 @@ export async function registerDiscussRoutes(app: FastifyInstance): Promise<void>
 
     // 2b. Chat path: ensure the finding's session exists, then post the
     //     message with the finding context attached.
-    await ensureFindingSession(gateway, sessionId, obj);
+    await ensureGatewaySession(gateway, sessionId, obj.title);
 
     const context = buildFindingContext(obj);
     await gateway.chat(sessionId, { message: `${context}\n\n${message}` });
@@ -207,25 +196,3 @@ export async function registerDiscussRoutes(app: FastifyInstance): Promise<void>
   });
 }
 
-async function ensureFindingSession(
-  gateway: HermesClient,
-  sessionId: string,
-  obj: ObjectRow,
-): Promise<void> {
-  try {
-    await gateway.getSession(sessionId);
-    return;
-  } catch {
-    // not found — create it below
-  }
-  try {
-    await gateway.createSession({
-      id: sessionId,
-      title: truncate(obj.title, 200),
-      source: 'api_server',
-    });
-  } catch {
-    // A concurrent create won the race; the session now exists. If it
-    // is *still* missing, the chat call below surfaces a clean 404.
-  }
-}

@@ -12,6 +12,8 @@ import {
   AlertCircle,
   ListTodo,
   Play,
+  Send,
+  ExternalLink,
 } from 'lucide-react';
 import { api, type Task, type TaskCategory, type TaskStatus, type TaskAnalytics } from '../api';
 import { useServer } from '../server';
@@ -19,6 +21,7 @@ import { Sidebar } from '../components/Sidebar';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { cn } from '../lib/utils';
 
 const CATEGORY_LABEL: Record<TaskCategory, string> = {
@@ -114,12 +117,14 @@ function MissionTaskRow({
   onToggle,
   onDefer,
   onArchive,
+  onDelegate,
   busy,
 }: {
   task: Task;
   onToggle: (t: Task) => void;
   onDefer: (t: Task) => void;
   onArchive: (t: Task) => void;
+  onDelegate: (t: Task) => void;
   busy: boolean;
 }): React.JSX.Element {
   const done = task.status === 'done';
@@ -152,22 +157,48 @@ function MissionTaskRow({
             <Play className="w-3 h-3" /> In progress
           </div>
         ) : null}
+        {task.sentToHermesAt ? (
+          <div className="text-[11px] text-accent-text mt-0.5 flex items-center gap-1">
+            <Send className="w-3 h-3" /> Delegated to Hermes
+          </div>
+        ) : null}
       </div>
       <span className={cn('text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0', CATEGORY_COLOR[task.category])}>
         {CATEGORY_LABEL[task.category]}
       </span>
       <div className="flex items-center gap-1 shrink-0">
-        {!done ? (
-          <Button
-            size="icon"
-            variant="ghost"
-            title="Defer to tomorrow"
-            aria-label="Defer to tomorrow"
-            disabled={busy}
-            onClick={() => onDefer(task)}
+        {task.sentToHermesAt ? (
+          <a
+            href={`/chat/task-${task.id}`}
+            title="Open the conversation with Hermes"
+            aria-label="Open Hermes conversation"
+            className="w-7 h-7 rounded-md flex items-center justify-center text-accent-text hover:bg-accent-soft transition"
           >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </Button>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        ) : !done ? (
+          <>
+            <Button
+              size="icon"
+              variant="ghost"
+              title="Delegate to Hermes"
+              aria-label="Delegate to Hermes"
+              disabled={busy}
+              onClick={() => onDelegate(task)}
+            >
+              <Send className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              title="Defer to tomorrow"
+              aria-label="Defer to tomorrow"
+              disabled={busy}
+              onClick={() => onDefer(task)}
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </Button>
+          </>
         ) : null}
         <Button size="icon" variant="ghost" title="Archive" aria-label="Archive task" disabled={busy} onClick={() => onArchive(task)}>
           <Trash2 className="w-3.5 h-3.5" />
@@ -225,6 +256,27 @@ export function MissionPage(): React.JSX.Element {
     mutationFn: (id: string) => api.archiveTask(id),
     onSuccess: invalidate,
   });
+  const delegateMut = useMutation({
+    mutationFn: ({ id, context }: { id: string; context?: string }) => api.delegateTask(id, { context }),
+    onSuccess: invalidate,
+  });
+
+  // Delegate dialog — the task stays on your mission; Hermes gets the
+  // brief (with optional context) and reports back in its own thread.
+  const [delegating, setDelegating] = React.useState<Task | null>(null);
+  const [delegateContext, setDelegateContext] = React.useState('');
+
+  const openDelegate = (task: Task): void => {
+    setDelegateContext('');
+    setDelegating(task);
+  };
+  const confirmDelegate = (): void => {
+    if (!delegating) return;
+    delegateMut.mutate(
+      { id: delegating.id, context: delegateContext.trim() || undefined },
+      { onSuccess: () => setDelegating(null) },
+    );
+  };
 
   const all = tasksQ.data?.tasks ?? [];
   const todayTasks = all.filter((t) => !t.dueAt || startOfDay(new Date(t.dueAt)).getTime() <= startOfDay(new Date()).getTime());
@@ -369,6 +421,7 @@ export function MissionPage(): React.JSX.Element {
                     onToggle={(task) => updateMut.mutate({ id: task.id, status: task.status === 'done' ? 'todo' : 'done' })}
                     onDefer={(task) => deferMut.mutate(task.id)}
                     onArchive={(task) => archiveMut.mutate(task.id)}
+                    onDelegate={openDelegate}
                   />
                 ))}
               </ul>
@@ -403,9 +456,43 @@ export function MissionPage(): React.JSX.Element {
 
         <div className="mt-6 flex items-center gap-2 text-[11px] text-text-quaternary">
           <CalendarClock className="w-3.5 h-3.5" />
-          Deferring a task moves it to tomorrow's mission. Hermes can read these tasks and analytics through MCP tools.
+          These are your tasks — Hermes only acts when you delegate one. Deferring moves it to tomorrow's mission.
         </div>
       </main>
+
+      <Dialog open={delegating !== null} onOpenChange={(open) => { if (!open) setDelegating(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="w-4 h-4 text-accent-text" />
+              Delegate to Hermes
+            </DialogTitle>
+            <DialogDescription>
+              <span className="block">“{delegating?.title}”</span>
+              <span className="block mt-1">
+                The task stays on your mission. Hermes takes it on and reports back in a dedicated
+                conversation — add context to make clear what done looks like.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={delegateContext}
+            onChange={(e) => setDelegateContext(e.target.value)}
+            placeholder="Context (optional): why this matters, constraints, what 'done' means…"
+            rows={4}
+            className="w-full rounded-md border border-border-default bg-surface-0 px-3 py-2 text-[13px] text-text-primary placeholder:text-text-quaternary outline-none focus:border-accent resize-none"
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDelegating(null)} disabled={delegateMut.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={confirmDelegate} disabled={delegateMut.isPending} className="gap-1.5">
+              {delegateMut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              {delegateMut.isPending ? 'Delegating…' : 'Delegate'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

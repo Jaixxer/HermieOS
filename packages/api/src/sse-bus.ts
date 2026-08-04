@@ -74,6 +74,12 @@ export function openEventStream(
   handlers: SseClientHandlers,
   lastEventId?: string,
 ): SseClientHandle {
+  // A fresh connection (no Last-Event-ID) must NOT replay history:
+  // every historical feed event + notification would fire toasts and
+  // OS notifications. Instead we only stream events created after this
+  // connection opened. Reconnects (which send Last-Event-ID) resume
+  // exactly where the client left off.
+  const freshCutoff = lastEventId ? null : new Date();
   let lastFeedId = lastEventId ?? '';
   let lastNotificationId = '';
   let cancelled = false;
@@ -91,6 +97,9 @@ export function openEventStream(
             eq(schema.feedEvents.userId, userId),
             lastFeedId
               ? sql`${schema.feedEvents.id} > ${lastFeedId}::uuid`
+              : sql`true`,
+            freshCutoff
+              ? sql`${schema.feedEvents.createdAt} >= ${freshCutoff.toISOString()}`
               : sql`true`,
           ),
         )
@@ -122,6 +131,9 @@ export function openEventStream(
             eq(schema.notifications.userId, userId),
             lastNotificationId
               ? sql`${schema.notifications.id} > ${lastNotificationId}::uuid`
+              : sql`true`,
+            freshCutoff
+              ? sql`${schema.notifications.createdAt} >= ${freshCutoff.toISOString()}`
               : sql`true`,
           ),
         )

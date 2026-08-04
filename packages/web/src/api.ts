@@ -676,7 +676,7 @@ export const api = {
   archiveSubscription(id: string): Promise<{ subscription: Subscription }> {
     return request(`/subscriptions/${id}/archive`, { method: 'POST' });
   },
-  runs(limit = 20): Promise<{ runs: Array<{ id: string; kind: string; status: string; createdAt: string }> }> {
+  runs(limit = 20): Promise<{ runs: Array<{ id: string; kind: string; status: string; createdAt: string; startedAt: string | null; finishedAt: string | null; error: string | null }> }> {
     return request(`/runs?limit=${limit}`);
   },
 
@@ -802,6 +802,12 @@ export const api = {
   },
   sendTasksToHermes(taskIds: string[], prompt?: string): Promise<{ updated: number; prompt: string }> {
     return request('/tasks/send-to-hermes', { method: 'POST', body: JSON.stringify({ taskIds, prompt }) });
+  },
+  /** Hand one task to Hermes with optional context. The task stays on
+   *  the user's mission; Hermes gets a dedicated conversation
+   *  (`task-<id>` on the gateway) and reports back there. */
+  delegateTask(id: string, body: { context?: string }): Promise<{ sessionId: string; delegated: boolean }> {
+    return request(`/tasks/${id}/delegate`, { method: 'POST', body: JSON.stringify(body) });
   },
 
   // Upcoming

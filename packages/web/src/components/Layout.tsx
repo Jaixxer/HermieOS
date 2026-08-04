@@ -2,14 +2,8 @@ import * as React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import { useServer } from '../server';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Bell,
-  ChevronDown,
-  Search,
-  Command as CommandIcon,
-} from 'lucide-react';
-import { api } from '../api';
+import { useQueryClient } from '@tanstack/react-query';
+import { ChevronDown, Search } from 'lucide-react';
 import { useSse } from '../sse';
 import { PwaBanner } from '../pwa';
 import { NotificationsBell } from './NotificationsBell';
@@ -17,12 +11,9 @@ import { ToastProvider, useToasts } from './Toasts';
 import { onSystemNotificationNavigate, showSystemNotification } from '../systemNotification';
 import { CommandPalette, useCommandPalette } from './CommandPalette';
 import { Sidebar } from './Sidebar';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 import { Kbd } from './ui/kbd';
 import { Separator } from './ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
-import { cn } from '../lib/utils';
 
 // ============================================================================
 // Topbar
@@ -142,14 +133,14 @@ function LayoutInner() {
   };
 
   useSse({
-    onFeed: (e) => {
+    onFeed: () => {
       qc.invalidateQueries({ queryKey: ['feed'] });
       qc.invalidateQueries({ queryKey: ['unread'] });
-      // Notifications are written to the feed as kind='notification'
-      // events; keep the bell's badge + list in sync.
-      if (e.kind === 'notification') {
-        showNotification({ title: e.title, body: e.body ?? undefined, objectId: e.objectId });
-      }
+      // Notifications arrive on the dedicated `notification` SSE event
+      // below. We deliberately do NOT also fire toasts for feed events
+      // with kind='notification' — notifyUser writes BOTH a feed event
+      // and a notification row, so handling both paths double-fires
+      // every notification.
     },
     onNotification: (n) => {
       showNotification({ title: n.title, body: n.body, objectId: n.objectId });
@@ -161,7 +152,6 @@ function LayoutInner() {
 
 export function Layout() {
   const location = useLocation();
-  const qc = useQueryClient();
   const { connected } = useServer();
 
   return (

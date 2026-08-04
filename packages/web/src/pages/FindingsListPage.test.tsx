@@ -102,8 +102,8 @@ describe('FindingsListPage (deck)', () => {
     render(renderPage());
     expect(await screen.findByText('A Paper About Agent Tool Use')).toBeInTheDocument();
     expect(screen.getByText('AgentHub — No-code Builder')).toBeInTheDocument();
-    expect(screen.getByText('Research')).toBeInTheDocument();
-    expect(screen.getByText('Opportunity')).toBeInTheDocument();
+    expect(screen.getByText('// Research')).toBeInTheDocument();
+    expect(screen.getByText('// Opportunity')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: /arxiv.org\/abs\/2412.12345/ });
     expect(link).toHaveAttribute('href', 'https://arxiv.org/abs/2412.12345');
   });

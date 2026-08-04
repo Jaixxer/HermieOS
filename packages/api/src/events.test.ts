@@ -121,6 +121,108 @@ describe('openEventStream (bus) — direct test', () => {
       aliceHandle.close();
     }
   });
+
+  it('does NOT replay historical events on a fresh connection (no Last-Event-ID)', async () => {
+    const { openEventStream, setDb } = await import('./sse-bus.js');
+    setDb(db);
+
+    // Seed an old feed event + notification (before any connection).
+    await db.insert(schema.feedEvents).values({
+      userId: aliceId,
+      kind: 'notification',
+      objectId: null,
+      title: 'stale-feed-notification',
+      payload: { source: 'test' },
+      createdAt: new Date(Date.now() - 60_000),
+    });
+    await db.insert(schema.notifications).values({
+      userId: aliceId,
+      title: 'stale-notification',
+      message: 'old',
+      priority: 'normal',
+      createdAt: new Date(Date.now() - 60_000),
+    });
+
+    const received: Array<{ type: string; title: string }> = [];
+    const handle = openEventStream(aliceId, {
+      onEvent: (e) => {
+        if (e.type === 'feed' || e.type === 'notification') {
+          received.push({ type: e.type, title: e.event.title });
+        }
+      },
+    });
+    try {
+      // Give the initial tick + a couple of polls time to run.
+      await new Promise((r) => setTimeout(r, SSE_POLL_MS * 5 + 300));
+      expect(received.filter((e) => e.title === 'stale-feed-notification')).toHaveLength(0);
+      expect(received.filter((e) => e.title === 'stale-notification')).toHaveLength(0);
+
+      // Events created AFTER the connection opened are streamed.
+      await db.insert(schema.feedEvents).values({
+        userId: aliceId,
+        kind: 'notification',
+        objectId: null,
+        title: 'fresh-feed-notification',
+        payload: { source: 'test' },
+      });
+      await new Promise((r) => setTimeout(r, SSE_POLL_MS * 5 + 300));
+      expect(received.some((e) => e.title === 'fresh-feed-notification')).toBe(true);
+    } finally {
+      handle.close();
+    }
+  });
+
+  it('resumes from Last-Event-ID (reconnect semantics) instead of cutting at now', async () => {
+    const { openEventStream, setDb } = await import('./sse-bus.js');
+    setDb(db);
+
+    // Old event, then an event slightly newer than it.
+    await db.insert(schema.feedEvents).values({
+      userId: aliceId,
+      kind: 'object_created',
+      objectId: null,
+      title: 'pre-cursor',
+      payload: { source: 'test' },
+      createdAt: new Date(Date.now() - 60_000),
+    });
+    const [cursorRow] = await db
+      .select({ id: schema.feedEvents.id })
+      .from(schema.feedEvents)
+      .where(sql`${schema.feedEvents.title} = 'pre-cursor'`)
+      .limit(1);
+    if (!cursorRow) throw new Error('cursor row missing');
+
+    // Reconnect with Last-Event-ID pointing at the old event.
+    const received: string[] = [];
+    const handle = openEventStream(aliceId, {
+      onEvent: (e) => {
+        if (e.type === 'feed') received.push(e.event.title);
+      },
+    }, cursorRow.id);
+    try {
+      // Events older than the cursor (even ones after "now" conceptually
+      // don't exist here) must not arrive; only strictly-newer ones.
+      const [same] = await db
+        .select({ id: schema.feedEvents.id })
+        .from(schema.feedEvents)
+        .where(sql`${schema.feedEvents.title} = 'pre-cursor'`);
+      expect(same).toBeDefined();
+      await new Promise((r) => setTimeout(r, SSE_POLL_MS * 5 + 300));
+      expect(received).not.toContain('pre-cursor');
+
+      await db.insert(schema.feedEvents).values({
+        userId: aliceId,
+        kind: 'object_created',
+        objectId: null,
+        title: 'post-cursor',
+        payload: { source: 'test' },
+      });
+      await new Promise((r) => setTimeout(r, SSE_POLL_MS * 5 + 300));
+      expect(received).toContain('post-cursor');
+    } finally {
+      handle.close();
+    }
+  });
 });
 
 describe('GET /events (SSE)', () => {
