@@ -22,32 +22,25 @@ import {
 import { api, type ObjectDetail, type HermesInfo, type HermesMessage } from '../api';
 import { useScouts } from '../hooks/data';
 import { useServer } from '../server';
-import { Button } from '../components/ui/button';
 import { cn, formatRelative } from '../lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 /**
- * Finding conversation — a dedicated surface for talking to Hermes
- * about ONE finding.
- *
- * Deliberately its own page, not a mode of the Chat page. The finding
- * is pinned as a hero context card (so Hermes and the user always
- * know what is being discussed), and the follow-up box records raw
- * feedback as a `suggest` row before dispatching — either into the
- * finding's chat session (immediate) or as a tracked background
- * research run.
+ * Finding conversation — talk to Hermes about ONE finding.
+ * Editorial frame: the finding pinned as a hard-edged hero card, a
+ * thread of white/ink bubbles, and a dark console composer. Every
+ * follow-up records raw feedback before dispatching.
  */
 
 // ============================================================================
-// Object-type accent palette (editorial-lite: hard blocks, one bold hue)
+// Object-type accents
 // ============================================================================
 
 interface TypeMeta {
   label: string;
-  /** Tailwind classes for the accent block + text on white. */
+  /** Tailwind classes for the accent band + text. */
   chip: string;
-  /** Solid accent color used for bands and borders. */
   band: string;
   hard: string;
 }
@@ -68,7 +61,7 @@ function typeMeta(type: string): TypeMeta {
 }
 
 // ============================================================================
-// Quick actions — one-tap follow-ups that steer Hermes in a direction
+// Quick actions
 // ============================================================================
 
 interface QuickAction {
@@ -145,46 +138,58 @@ export function FindingChatPage(): React.JSX.Element {
   }, [obj, scouts]);
 
   if (objectQ.isLoading) {
-    return <div className="min-h-screen flex items-center justify-center text-[13px] text-text-tertiary">Loading finding…</div>;
+    return (
+      <div className="flex bg-p5-cream flex-1 min-w-0 min-h-0">
+        <div className="flex-1 flex items-center justify-center font-mono text-[12px] tracking-widest text-p5-dark-muted">
+          LOADING FINDING…
+        </div>
+      </div>
+    );
   }
 
   if (!obj) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3 text-text-tertiary">
-        <CircleAlert className="w-8 h-8" />
-        <p className="text-[14px]">This finding no longer exists.</p>
-        <Link to="/scouting" className="text-[13px] text-accent-text hover:underline">Back to scouting</Link>
+      <div className="flex bg-p5-cream flex-1 min-w-0 min-h-0">
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-p5-dark-muted">
+          <CircleAlert className="w-8 h-8" />
+          <p className="text-[14px]">This finding no longer exists.</p>
+          <Link to="/scouting" className="text-[12px] font-black tracking-[0.12em] text-accent hover:underline">
+            BACK TO SCOUTING
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-page text-text-primary">
-      <TopBar objectTitle={obj.title} />
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-6 py-6 space-y-6">
-          <FindingHero obj={obj} scoutName={scoutName} />
-          {session && hermesInfo.data ? (
-            <FindingThread
-              obj={obj}
-              info={hermesInfo.data}
-              sessionId={session.sessionId}
-              exists={session.exists}
-            />
-          ) : null}
+    <div className="h-screen overflow-hidden flex bg-p5-cream text-p5-dark flex-1 min-w-0">
+      <main className="flex-1 min-w-0 min-h-0 flex flex-col">
+        <TopBar objectTitle={obj.title} />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+            <FindingHero obj={obj} scoutName={scoutName} />
+            {session && hermesInfo.data ? (
+              <FindingThread
+                obj={obj}
+                info={hermesInfo.data}
+                sessionId={session.sessionId}
+                exists={session.exists}
+              />
+            ) : null}
+          </div>
         </div>
-      </div>
-      {session && hermesInfo.data ? (
-        <FollowUpComposer
-          obj={obj}
-          onSent={(background) => {
-            qc.invalidateQueries({ queryKey: ['hermes-messages', session.sessionId] });
-            if (!background) {
-              qc.invalidateQueries({ queryKey: ['discuss-session', obj.id] });
-            }
-          }}
-        />
-      ) : null}
+        {session && hermesInfo.data ? (
+          <FollowUpComposer
+            obj={obj}
+            onSent={(background) => {
+              qc.invalidateQueries({ queryKey: ['hermes-messages', session.sessionId] });
+              if (!background) {
+                qc.invalidateQueries({ queryKey: ['discuss-session', obj.id] });
+              }
+            }}
+          />
+        ) : null}
+      </main>
     </div>
   );
 }
@@ -195,15 +200,15 @@ export function FindingChatPage(): React.JSX.Element {
 
 function TopBar({ objectTitle }: { objectTitle: string }): React.JSX.Element {
   return (
-    <div className="h-[52px] shrink-0 px-6 border-b border-border-default flex items-center gap-3 bg-surface-0/95 backdrop-blur">
-      <Link to={`/objects/${''}`} className="flex items-center gap-2 text-text-tertiary hover:text-text-primary transition">
-        <ArrowLeft className="w-4 h-4" />
-        <span className="text-[13px]">Finding</span>
+    <div className="h-[52px] shrink-0 border-b border-black/10 px-6 flex items-center gap-3 bg-p5-cream">
+      <Link to={`/objects/${''}`} className="flex items-center gap-2 font-mono text-[11px] tracking-[0.12em] text-p5-dark-muted transition hover:text-p5-dark">
+        <ArrowLeft className="h-4 w-4" />
+        FINDING
       </Link>
-      <span className="text-[11px] text-text-quaternary">/</span>
-      <MessageSquare className="w-3.5 h-3.5 text-accent-text" />
-      <span className="text-[13px] font-medium text-text-primary truncate">Conversation</span>
-      <span className="text-[11px] text-text-quaternary truncate hidden sm:inline">· {objectTitle}</span>
+      <span className="text-[11px] text-p5-dark-muted">/</span>
+      <MessageSquare className="h-3.5 w-3.5 text-accent" />
+      <span className="truncate font-black tracking-[0.14em] text-p5-dark uppercase">Conversation</span>
+      <span className="hidden truncate font-mono text-[11px] text-p5-dark-muted sm:inline">· {objectTitle}</span>
     </div>
   );
 }
@@ -223,45 +228,44 @@ function FindingHero({ obj, scoutName }: { obj: ObjectDetail; scoutName: string 
   const source = typeof body['source'] === 'string' ? body['source'] : null;
 
   return (
-    <section className="relative overflow-hidden rounded-xl border border-border-default bg-surface-0 shadow-sm">
-      {/* Hard accent band + diagonal cut */}
+    <section className="relative overflow-hidden border-2 border-black/15 bg-p5-panel">
       <div className={cn('h-1.5 w-full', meta.band)} />
-      <div className="absolute top-1.5 right-0 w-24 h-24 bg-gradient-to-bl from-transparent to-black/[0.03] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <div className="flex flex-wrap items-center gap-2">
-          <span className={cn('text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded border', meta.chip)}>
+          <span className={cn('border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em]', meta.chip)}>
             {meta.label}
           </span>
-          {kind ? <span className="text-[10px] font-mono text-text-quaternary">kind: {kind}</span> : null}
+          {kind ? <span className="font-mono text-[10px] text-p5-dark-muted">kind: {kind}</span> : null}
           {scoutName ? (
-            <span className="text-[10px] font-mono text-text-quaternary inline-flex items-center gap-1">
-              <FlaskConical className="w-3 h-3" /> {scoutName}
+            <span className="inline-flex items-center gap-1 font-mono text-[10px] text-p5-dark-muted">
+              <FlaskConical className="h-3 w-3" /> {scoutName}
             </span>
           ) : null}
         </div>
-        <h1 className="mt-3 text-[26px] leading-tight font-bold tracking-tight text-text-primary">
+        <h1 className="relative mt-3 inline-block font-p5-serif text-[clamp(24px,3vw,36px)] leading-[0.95] text-p5-dark">
           {obj.title}
+          <span className="absolute -bottom-2 left-0 h-[5px] w-full bg-accent" />
         </h1>
-        {obj.summary ? <p className="mt-2 text-[13px] text-text-secondary leading-relaxed max-w-2xl">{obj.summary}</p> : null}
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-text-tertiary">
+        {obj.summary ? <p className="mt-4 max-w-2xl text-[13px] leading-relaxed text-p5-dark-muted">{obj.summary}</p> : null}
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 font-mono text-[11px] text-p5-dark-muted">
           {url ? (
-            <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent-text hover:underline max-w-[420px] truncate">
-              <ExternalLink className="w-3 h-3 shrink-0" />
+            <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-[420px] items-center gap-1 truncate font-bold text-accent hover:underline">
+              <ExternalLink className="h-3 w-3 shrink-0" />
               {url}
             </a>
           ) : null}
           {stars != null ? (
-            <span className="inline-flex items-center gap-1"><Star className="w-3 h-3 text-amber-500" /> {stars.toLocaleString()}</span>
+            <span className="inline-flex items-center gap-1"><Star className="h-3 w-3 text-amber-500" /> {stars.toLocaleString()}</span>
           ) : null}
           {author ? <span>{author}</span> : null}
           {published ? <span>{published}</span> : null}
-          {source ? <span className="font-mono">{source}</span> : null}
+          {source ? <span>{source}</span> : null}
           <span>{formatRelative(obj.updatedAt)}</span>
         </div>
         {obj.tags.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {obj.tags.map((t) => (
-              <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-surface-2 text-text-tertiary">{t}</span>
+              <span key={t} className="border border-black/15 bg-black/[0.03] px-2 py-0.5 font-mono text-[10px] text-p5-dark-muted">{t}</span>
             ))}
           </div>
         ) : null}
@@ -271,7 +275,7 @@ function FindingHero({ obj, scoutName }: { obj: ObjectDetail; scoutName: string 
 }
 
 // ============================================================================
-// Thread — bespoke message list for the finding conversation
+// Thread
 // ============================================================================
 
 function FindingThread({
@@ -305,10 +309,10 @@ function FindingThread({
 
   if (!exists && !messages.isLoading && (messages.data?.data.length ?? 0) === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border-default p-10 text-center space-y-2">
-        <MessageSquare className="w-8 h-8 mx-auto text-text-quaternary" />
-        <p className="text-[14px] font-medium text-text-primary">Start the conversation</p>
-        <p className="text-[12px] text-text-tertiary max-w-md mx-auto">
+      <div className="border-2 border-dashed border-p5-dark-line p-10 text-center space-y-2">
+        <MessageSquare className="mx-auto h-8 w-8 text-p5-dark-muted" />
+        <p className="font-p5-serif text-[22px] text-p5-dark">Start the conversation</p>
+        <p className="mx-auto max-w-md text-[12px] text-p5-dark-muted">
           Ask Hermes to dig into this finding — summarize it, plan a project around it, or
           research it deeper. The conversation stays attached to this finding.
         </p>
@@ -317,15 +321,15 @@ function FindingThread({
   }
 
   if (messages.isLoading && ordered.length === 0) {
-    return <div className="py-10 text-center text-[12px] text-text-quaternary">Loading conversation…</div>;
+    return <div className="py-10 text-center font-mono text-[11px] tracking-widest text-p5-dark-muted">LOADING CONVERSATION…</div>;
   }
 
   if (ordered.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border-default p-10 text-center space-y-2">
-        <Bot className="w-8 h-8 mx-auto text-text-quaternary" />
-        <p className="text-[14px] font-medium text-text-primary">Nothing here yet</p>
-        <p className="text-[12px] text-text-tertiary max-w-md mx-auto">
+      <div className="border-2 border-dashed border-p5-dark-line p-10 text-center space-y-2">
+        <Bot className="mx-auto h-8 w-8 text-p5-dark-muted" />
+        <p className="font-p5-serif text-[22px] text-p5-dark">Nothing here yet</p>
+        <p className="mx-auto max-w-md text-[12px] text-p5-dark-muted">
           Your first follow-up seeds Hermes with the finding's full context.
         </p>
       </div>
@@ -344,14 +348,15 @@ function FindingThread({
 
 function FindingBubble({ message, accentClass }: { message: HermesMessage; accentClass: string }): React.JSX.Element {
   const role = message.role;
+  const hasContent = typeof message.content === 'string' && message.content.trim().length > 0;
 
   if (role === 'tool') {
     return (
       <div className="max-w-3xl pl-9">
-        <div className="text-[10px] font-mono text-text-quaternary flex items-center gap-1.5 py-1">
-          <Wrench className="w-3 h-3 shrink-0" />
-          <span className="text-text-tertiary">{message.tool_name ?? 'tool'}</span>
-          <span className="truncate">· {typeof message.content === 'string' ? message.content.slice(0, 90) : ''}</span>
+        <div className="flex items-center gap-1.5 py-1 font-mono text-[11px] text-p5-dark-muted">
+          <Wrench className="h-3 w-3 shrink-0" />
+          <span className="text-p5-dark">{message.tool_name ?? 'tool'}</span>
+          <span className="truncate">· {hasContent ? String(message.content).slice(0, 90) : ''}</span>
         </div>
       </div>
     );
@@ -360,7 +365,7 @@ function FindingBubble({ message, accentClass }: { message: HermesMessage; accen
   if (role === 'system') {
     return (
       <div className="max-w-3xl pl-9">
-        <div className="text-[11px] font-mono text-text-quaternary bg-surface-1 border border-border-default rounded-md px-3 py-2 whitespace-pre-wrap">
+        <div className="whitespace-pre-wrap border border-black/10 px-3 py-2 font-mono text-[11px] text-p5-dark-muted">
           {message.content}
         </div>
       </div>
@@ -368,28 +373,33 @@ function FindingBubble({ message, accentClass }: { message: HermesMessage; accen
   }
 
   const isUser = role === 'user';
+
+  // Empty assistant replies carry no signal — skip the empty bubble.
+  if (!isUser && !hasContent) return <></>;
+
   return (
     <div className={cn('flex gap-3', isUser && 'flex-row-reverse')}>
       <div
         className={cn(
-          'w-7 h-7 shrink-0 rounded-md flex items-center justify-center',
-          isUser ? 'bg-text-primary text-page' : 'bg-surface-2 text-text-primary border border-border-default',
+          'flex h-7 w-7 shrink-0 items-center justify-center',
+          isUser ? 'bg-p5-ink text-p5-cream' : 'border border-black/15 text-p5-dark-muted',
         )}
       >
-        {isUser ? <UserIcon className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
+        {isUser ? <UserIcon className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
       </div>
       <div className={cn('min-w-0 flex-1', isUser && 'flex flex-col items-end')}>
-        <div className="text-[10px] text-text-quaternary mb-1 flex items-center gap-2">
-          <span className="font-medium">{isUser ? 'You' : 'Hermes'}</span>
-          {message.timestamp ? <span>{formatRelative(new Date(message.timestamp * 1000).toISOString())}</span> : null}
+        <div className="mb-1 flex items-center gap-2 text-[10px]">
+          <span className={cn('font-black tracking-[0.1em]', isUser ? 'text-p5-dark-muted' : 'text-accent')}>
+            {isUser ? 'YOU' : 'HERMES'}
+          </span>
+          {message.timestamp ? <span className="text-p5-dark-muted">{formatRelative(new Date(message.timestamp * 1000).toISOString())}</span> : null}
         </div>
         <div
           className={cn(
-            'rounded-lg px-3.5 py-2.5 text-[14px] leading-relaxed break-words overflow-hidden',
-            'prose prose-sm prose-a:text-accent-text prose-pre:bg-surface-2 prose-pre:border-0 prose-code:text-[13px] prose-code:bg-surface-2 prose-code:px-1 prose-code:rounded',
+            'px-3.5 py-2.5 text-[14px] leading-relaxed break-words overflow-hidden',
             isUser
-              ? 'bg-text-primary text-page max-w-[85%]'
-              : cn('bg-surface-1 border border-border-default text-text-primary border-l-4', accentClass),
+              ? 'bg-p5-ink text-p5-text max-w-[85%]'
+              : cn('border-2 border-black/15 bg-p5-panel text-p5-dark border-l-4', accentClass),
           )}
         >
           <MarkdownContent content={message.content} />
@@ -400,24 +410,24 @@ function FindingBubble({ message, accentClass }: { message: HermesMessage; accen
 }
 
 function MarkdownContent({ content }: { content: string | null }): React.JSX.Element {
-  if (!content) return <>(no content)</>;
+  if (!content || !content.trim()) return <span className="text-p5-dark-muted">—</span>;
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
         a: ({ href, children }) => (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="underline">
+          <a href={href} target="_blank" rel="noopener noreferrer" className="underline decoration-accent/60 underline-offset-2">
             {children}
           </a>
         ),
         code: ({ className, children, ...props }) => {
           const isInline = !className;
           return isInline ? (
-            <code className="bg-surface-2 px-1 py-0.5 rounded text-[13px] font-mono" {...props}>
+            <code className="rounded bg-black/[0.05] px-1 py-0.5 text-[12px] font-mono [.bg-p5-ink_&]:bg-white/10" {...props}>
               {children}
             </code>
           ) : (
-            <pre className="bg-surface-2 rounded-md p-3 my-2 overflow-x-auto text-[13px] font-mono">
+            <pre className="my-2 overflow-x-auto rounded bg-black/[0.06] p-3 text-[12px] font-mono [.bg-p5-ink_&]:bg-white/10">
               <code className={className} {...props}>
                 {children}
               </code>
@@ -468,11 +478,11 @@ function FollowUpComposer({
   }
 
   return (
-    <div className="shrink-0 border-t border-border-default bg-surface-0/95 backdrop-blur">
-      <div className="max-w-4xl mx-auto px-6 py-3">
+    <div className="shrink-0 border-t border-black/10 bg-p5-ink-2">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
         {/* Quick actions */}
-        <div className="flex flex-wrap gap-2 mb-2.5">
-          <span className="text-[10px] uppercase tracking-wider text-text-quaternary self-center mr-1">Follow up:</span>
+        <div className="mb-2.5 flex gap-2 overflow-x-auto sm:flex-wrap pb-1 -mx-1 px-1">
+          <span className="mr-1 self-center p5-kicker text-p5-muted">Follow up:</span>
           {QUICK_ACTIONS.map((qa) => {
             const Icon = qa.icon;
             return (
@@ -481,16 +491,16 @@ function FollowUpComposer({
                 type="button"
                 onClick={() => send(qa.prompt)}
                 disabled={sendMut.isPending}
-                className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-border-default bg-surface-0 text-text-secondary hover:border-accent hover:text-accent-text hover:bg-accent-soft transition disabled:opacity-50"
+                className="inline-flex shrink-0 items-center gap-1.5 border border-white/25 px-2.5 py-1.5 min-h-[40px] sm:min-h-0 font-mono text-[10px] font-bold tracking-[0.1em] text-p5-muted transition hover:border-white/70 hover:text-p5-text disabled:opacity-50"
               >
-                <Icon className="w-3 h-3" />
+                <Icon className="h-3 w-3" />
                 {qa.label}
               </button>
             );
           })}
         </div>
 
-        <div className="flex items-end gap-2 border border-border-default rounded-lg p-2 bg-surface-0 focus-within:border-accent transition">
+        <div className="flex items-end gap-2 border border-white/15 bg-p5-ink-3 transition focus-within:border-accent">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -501,42 +511,42 @@ function FollowUpComposer({
               }
             }}
             placeholder={background ? 'Describe the deep work — a tracked run will do it.' : 'Raw feedback: what should Hermes do with this finding?'}
-            className="min-h-[40px] max-h-[160px] resize-none border-0 p-1 text-[13px] focus:ring-0 bg-transparent flex-1 outline-none"
+            className="min-h-[40px] max-h-[160px] flex-1 resize-none border-0 bg-transparent p-3 text-[16px] sm:text-[13px] text-p5-text outline-none placeholder:text-p5-muted focus:ring-0"
             rows={1}
           />
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 items-center gap-2 p-1.5">
             <button
               type="button"
               onClick={() => setBackground((b) => !b)}
               title="Run as a tracked background run instead of a chat reply"
               className={cn(
-                'inline-flex items-center gap-1.5 text-[10px] font-medium px-2 py-1.5 rounded-md border transition',
+                'inline-flex items-center gap-1.5 border px-2 py-1.5 font-mono text-[10px] font-bold tracking-[0.1em] transition',
                 background
-                  ? 'border-accent bg-accent-soft text-accent-text'
-                  : 'border-border-default text-text-tertiary hover:text-text-primary',
+                  ? 'border-accent bg-accent/10 text-accent'
+                  : 'border-white/25 text-p5-muted hover:border-white/70 hover:text-p5-text',
               )}
             >
-              <ListChecks className="w-3 h-3" />
+              <ListChecks className="h-3 w-3" />
               Background
             </button>
-            <Button
+            <button
+              type="button"
               onClick={() => send(input)}
               disabled={!input.trim() || sendMut.isPending}
-              size="icon"
-              className="rounded-lg"
               aria-label="Send follow-up"
+              className="flex h-11 w-11 sm:h-9 sm:w-9 items-center justify-center bg-accent text-white transition hover:bg-accent-hover disabled:opacity-40"
             >
-              {sendMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            </Button>
+              {sendMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </button>
           </div>
         </div>
 
-        {note ? <div className="mt-2 text-[11px] text-accent-text flex items-center gap-1.5"><ListChecks className="w-3 h-3" /> {note}</div> : null}
-        {err ? <div className="mt-2 text-[11px] text-status-failed">{err}</div> : null}
-        <div className="mt-1.5 text-[10px] text-text-quaternary flex items-center gap-3">
-          <span><kbd className="font-mono">⏎</kbd> send</span>
-          <span><kbd className="font-mono">⇧⏎</kbd> newline</span>
-          <span>Every follow-up trains the feed — Hermes learns what you care about.</span>
+        {note ? <div className="mt-2 flex items-center gap-1.5 font-mono text-[11px] text-accent"><ListChecks className="h-3 w-3" /> {note}</div> : null}
+        {err ? <div className="mt-2 font-mono text-[11px] text-status-failed">{err}</div> : null}
+        <div className="mt-1.5 hidden sm:flex items-center gap-4 font-mono text-[10px] tracking-[0.1em] text-p5-muted">
+          <span><kbd className="text-p5-text">ENTER</kbd> SEND</span>
+          <span><kbd className="text-p5-text">SHIFT+ENTER</kbd> NEWLINE</span>
+          <span>EVERY FOLLOW-UP TRAINS THE FEED — HERMES LEARNS WHAT YOU CARE ABOUT.</span>
         </div>
       </div>
     </div>

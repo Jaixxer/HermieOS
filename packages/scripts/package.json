@@ -11,6 +11,7 @@
     "backfill-scout-links": "tsx src/backfill-scout-links.ts",
     "hermes-profile-gen": "tsx src/hermes-profile-gen.ts",
     "hermes-probe": "tsx src/hermes-probe.ts",
+    "hermes-mcp-register": "tsx src/hermes-mcp-register.ts",
     "hermes-skills-deploy": "tsx src/hermes-skills-deploy.ts",
     "hermes-token-rotate": "tsx src/hermes-token-rotate.ts",
     "hermieos-mcp-docker": "tsx src/hermieos-mcp-docker.ts"

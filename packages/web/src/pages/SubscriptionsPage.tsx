@@ -22,10 +22,11 @@ export function SubscriptionsPage(): React.JSX.Element {
   const [showForm, setShowForm] = useState(false);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="flex-1 min-w-0 min-h-0 overflow-y-auto p-4 sm:p-6 lg:p-8">
+      <div className="space-y-4 max-w-[1100px] mx-auto">
+      <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Subscriptions</h1>
-        <button className="btn-primary" onClick={() => setShowForm((s) => !s)}>
+        <button className="btn-primary min-h-[44px] sm:min-h-0 shrink-0" onClick={() => setShowForm((s) => !s)}>
           {showForm ? 'Cancel' : 'New subscription'}
         </button>
       </div>
@@ -52,6 +53,7 @@ export function SubscriptionsPage(): React.JSX.Element {
           ))}
         </ul>
       )}
+      </div>
     </div>
   );
 }
@@ -151,13 +153,13 @@ function SubscriptionRow({ sub }: { sub: import('../api').Subscription }): React
       </div>
       <div className="flex flex-col gap-1">
         {sub.status !== 'archived' ? (
-          <button className="btn-ghost text-xs" onClick={() => patch.mutate()} disabled={patch.isPending}>
+          <button className="btn-ghost text-xs min-h-[40px] sm:min-h-0" onClick={() => patch.mutate()} disabled={patch.isPending}>
             {sub.status === 'paused' ? 'Resume' : 'Pause'}
           </button>
         ) : null}
         {sub.status !== 'archived' ? (
           <button
-            className="btn-ghost text-xs"
+            className="btn-ghost text-xs min-h-[40px] sm:min-h-0"
             onClick={() => {
               if (window.confirm(`Archive "${sub.name}"?`)) archive.mutate();
             }}

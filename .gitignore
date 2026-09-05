@@ -22,3 +22,45 @@ pnpm-debug.log*
 *.swo
 pgdata/
 .hermes-data
+
+# Local databases and runtime state
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.wal
+*.shm
+data/
+storage/
+uploads/
+runtime/
+logs/
+
+# Local credentials, certificates, and signing material
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Android / Capacitor generated files
+packages/web/android/.gradle/
+packages/web/android/build/
+packages/web/android/app/build/
+packages/web/android/app/src/main/assets/public/
+packages/web/android/app/src/main/assets/capacitor.config.json
+packages/web/android/local.properties
+
+# Packaged application artifacts
+packages/web/electron-dist/
+*.apk
+*.aab
+*.AppImage
+*.deb
+
+# Private product/design notes kept locally, not published
+/docs/
+/SPEC.md
+/TUI_SLASH_COMMANDS.md

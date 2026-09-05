@@ -12,6 +12,7 @@ import { buildContext } from './context.js';
 import { registerAuthDecorators, SESSION_COOKIE_NAME, getSessionUser } from './auth-middleware.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerMeRoutes } from './routes/me.js';
+import { registerDashboardTicketRoutes } from './routes/dashboard-ticket.js';
 import { registerFeedRoutes } from './routes/feed.js';
 import { registerObjectRoutes } from './routes/objects.js';
 import { registerSearchAndFeedbackRoutes } from './routes/search-feedback.js';
@@ -116,6 +117,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await registerAuthRoutes(app);
   await registerMeRoutes(app);
+  registerDashboardTicketRoutes(app);
   await registerFeedRoutes(app);
   await registerObjectRoutes(app);
   await registerSearchAndFeedbackRoutes(app);

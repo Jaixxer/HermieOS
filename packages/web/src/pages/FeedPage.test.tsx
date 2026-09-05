@@ -95,7 +95,9 @@ describe('FeedPage', () => {
       expect(screen.getByText(/^All$/i)).toBeInTheDocument();
     });
     // counts
-    expect(screen.getByText('3')).toBeInTheDocument(); // All chip count
+    await waitFor(() => {
+      expect(screen.getByText('3')).toBeInTheDocument(); // All chip count
+    });
   });
 
   it('clicking a filter chip passes the kind to api.feed', async () => {

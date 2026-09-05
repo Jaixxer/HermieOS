@@ -14,6 +14,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { cn } from '../lib/utils';
+import { Sheet } from '../components/ui/sheet';
+import { isTouchDevice } from '../mobile';
 import { Search, ZoomIn, ZoomOut, Maximize2, Network } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -153,6 +155,10 @@ export function GraphPage(): React.JSX.Element {
   const [zoom, setZoom] = React.useState(1);
   const [pan, setPan] = React.useState({ x: 0, y: 0 });
   const dragRef = React.useRef<{ startX: number; startY: number; panX: number; panY: number; moved: boolean } | null>(null);
+  const pinchRef = React.useRef<{ dist: number; zoom: number } | null>(null);
+  const pointersRef = React.useRef(new Map<number, { x: number; y: number }>());
+  const [selectedNode, setSelectedNode] = React.useState<GraphNode | null>(null);
+  const isTouch = isTouchDevice();
   const svgWrapRef = React.useRef<HTMLDivElement>(null);
 
   const layout = React.useMemo(() => {
@@ -280,9 +286,9 @@ export function GraphPage(): React.JSX.Element {
   const viewBox = `${-pan.x} ${-pan.y} ${layout.width / zoom} ${layout.height / zoom}`;
 
   return (
-    <div className="h-full flex flex-col bg-page text-text-primary">
+    <div className="flex-1 min-w-0 min-h-0 overflow-y-auto flex flex-col bg-page text-text-primary">
         {/* Header */}
-        <div className="h-[52px] shrink-0 px-6 border-b border-border-default flex items-center gap-3 bg-surface-0/95">
+        <div className="min-h-[52px] shrink-0 px-4 sm:px-6 py-2 sm:py-0 border-b border-border-default flex flex-wrap items-center gap-x-3 gap-y-2 bg-surface-0/95">
           <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-text-secondary">
             <Network className="w-4 h-4" />
           </div>
@@ -299,7 +305,7 @@ export function GraphPage(): React.JSX.Element {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Filter by title…"
-                className="h-8 w-48 pl-8 pr-2 rounded-lg border border-border-default bg-surface-0 text-[12px] text-text-primary placeholder:text-text-quaternary focus:border-accent focus:outline-none"
+                className="h-12 sm:h-8 w-full sm:w-48 pl-8 pr-2 rounded-lg border border-border-default bg-surface-0 text-[16px] sm:text-[12px] text-text-primary placeholder:text-text-quaternary focus:border-accent focus:outline-none"
               />
             </div>
             <button
@@ -315,13 +321,13 @@ export function GraphPage(): React.JSX.Element {
               Hide isolated
             </button>
             <div className="flex items-center gap-1">
-              <button type="button" onClick={() => zoomAt(1.2)} title="Zoom in" className="w-7 h-7 rounded-md hover:bg-surface-2 flex items-center justify-center text-text-secondary">
+              <button type="button" onClick={() => zoomAt(1.2)} title="Zoom in" className="w-11 h-11 sm:w-7 sm:h-7 rounded-md hover:bg-surface-2 flex items-center justify-center text-text-secondary">
                 <ZoomIn className="w-4 h-4" />
               </button>
-              <button type="button" onClick={() => zoomAt(0.8)} title="Zoom out" className="w-7 h-7 rounded-md hover:bg-surface-2 flex items-center justify-center text-text-secondary">
+              <button type="button" onClick={() => zoomAt(0.8)} title="Zoom out" className="w-11 h-11 sm:w-7 sm:h-7 rounded-md hover:bg-surface-2 flex items-center justify-center text-text-secondary">
                 <ZoomOut className="w-4 h-4" />
               </button>
-              <button type="button" onClick={resetView} title="Reset view" className="w-7 h-7 rounded-md hover:bg-surface-2 flex items-center justify-center text-text-secondary">
+              <button type="button" onClick={resetView} title="Reset view" className="w-11 h-11 sm:w-7 sm:h-7 rounded-md hover:bg-surface-2 flex items-center justify-center text-text-secondary">
                 <Maximize2 className="w-4 h-4" />
               </button>
             </div>
@@ -344,7 +350,7 @@ export function GraphPage(): React.JSX.Element {
                   setHiddenTypes(next);
                 }}
                 className={cn(
-                  'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition',
+                  'flex items-center gap-1.5 px-2.5 py-1 min-h-[44px] sm:min-h-0 rounded-full text-[11px] font-medium border transition',
                   hidden
                     ? 'bg-surface-0 text-text-quaternary border-border-default opacity-50 line-through'
                     : 'bg-surface-0 text-text-secondary border-border-default hover:border-border-strong',
@@ -361,23 +367,49 @@ export function GraphPage(): React.JSX.Element {
         <div
           ref={svgWrapRef}
           className="flex-1 min-h-0 overflow-hidden relative bg-page"
-          style={{ cursor: 'grab' }}
+          style={{ cursor: 'grab', touchAction: 'none' }}
           onWheel={(e) => {
             const factor = e.deltaY < 0 ? 1.1 : 0.9;
             setZoom((z) => Math.min(Math.max(z * factor, 0.3), 3));
           }}
-          onMouseDown={(e) => {
-            dragRef.current = { startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y, moved: false };
+          onPointerDown={(e) => {
+            try { (e.target as Element).setPointerCapture?.(e.pointerId); } catch { /* noop */ }
+            pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (pointersRef.current.size === 1) {
+              dragRef.current = { startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y, moved: false };
+              pinchRef.current = null;
+            } else if (pointersRef.current.size === 2) {
+              const [a, b] = [...pointersRef.current.values()] as [{ x: number; y: number }, { x: number; y: number }];
+              pinchRef.current = { dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), zoom };
+              dragRef.current = null;
+            }
           }}
-          onMouseMove={(e) => {
+          onPointerMove={(e) => {
+            if (!pointersRef.current.has(e.pointerId)) return;
+            pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            const pinch = pinchRef.current;
+            if (pinch && pointersRef.current.size >= 2) {
+              const [a, b] = [...pointersRef.current.values()] as [{ x: number; y: number }, { x: number; y: number }];
+              const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+              setZoom(Math.min(Math.max((pinch.zoom * dist) / pinch.dist, 0.3), 3));
+              return;
+            }
             if (!dragRef.current) return;
             const dx = e.clientX - dragRef.current.startX;
             const dy = e.clientY - dragRef.current.startY;
             if (Math.abs(dx) + Math.abs(dy) > 4) dragRef.current.moved = true;
             setPan({ x: dragRef.current.panX - dx / zoom, y: dragRef.current.panY - dy / zoom });
           }}
-          onMouseUp={() => { dragRef.current = null; }}
-          onMouseLeave={() => { dragRef.current = null; }}
+          onPointerUp={(e) => {
+            pointersRef.current.delete(e.pointerId);
+            if (pointersRef.current.size < 2) pinchRef.current = null;
+            if (pointersRef.current.size === 0) dragRef.current = null;
+          }}
+          onPointerCancel={(e) => {
+            pointersRef.current.delete(e.pointerId);
+            pinchRef.current = null;
+            dragRef.current = null;
+          }}
         >
           <svg
             viewBox={viewBox}
@@ -460,7 +492,11 @@ export function GraphPage(): React.JSX.Element {
                   transform={`translate(${n.x},${n.y})`}
                   className="cursor-pointer"
                   opacity={isMatched ? 1 : 0.12}
-                  onClick={() => { if (!dragRef.current?.moved) navigate(`/objects/${n.id}`); }}
+                  onClick={() => {
+                    if (dragRef.current?.moved) return;
+                    if (isTouch) { setSelectedNode(n); return; }
+                    navigate(`/objects/${n.id}`);
+                  }}
                 >
                   <circle
                     r={isHovered ? r + 2 : r}
@@ -509,8 +545,42 @@ export function GraphPage(): React.JSX.Element {
               {typeLabel(t)}
             </span>
           ))}
-          <span className="ml-auto">Scroll to zoom · drag to pan · click a node to open</span>
+          <span className="ml-auto hidden sm:inline">Scroll to zoom · drag to pan · click a node to open</span>
+          <span className="ml-auto sm:hidden">Pinch to zoom · drag to pan · tap a node</span>
         </div>
+      <Sheet
+        open={selectedNode !== null}
+        onClose={() => setSelectedNode(null)}
+        label="Graph node"
+        footer={
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedNode(null)}
+              className="flex-1 sm:flex-none px-4 py-2 min-h-[48px] sm:min-h-0 text-[11px] font-black tracking-[0.12em] text-p5-dark-muted"
+            >
+              CLOSE
+            </button>
+            <button
+              type="button"
+              onClick={() => { if (selectedNode) navigate(`/objects/${selectedNode.id}`); }}
+              className="flex-1 sm:flex-none bg-accent px-4 py-2 min-h-[48px] sm:min-h-0 text-[11px] font-black tracking-[0.12em] text-white"
+            >
+              OPEN
+            </button>
+          </div>
+        }
+      >
+        {selectedNode ? (
+          <div className="p-5 sm:p-6">
+            <div className="p5-kicker text-accent">{selectedNode.type}</div>
+            <h2 className="mt-2 font-p5-serif text-[24px] leading-tight text-p5-dark">{selectedNode.title}</h2>
+            <p className="mt-2 font-mono text-[11px] text-p5-dark-muted">
+              {typeof selectedNode.priority === 'number' ? `PRIORITY ${selectedNode.priority}` : 'IN THE GRAPH'}
+            </p>
+          </div>
+        ) : null}
+      </Sheet>
     </div>
   );
 }

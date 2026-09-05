@@ -21,7 +21,6 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { api, type ObjectSummary } from '../api';
 import { useFindings } from '../hooks/data';
-import { NavRail } from '../components/NavRail';
 import { cn, formatRelative } from '../lib/utils';
 
 /**
@@ -153,32 +152,33 @@ export function FindingsListPage(): React.JSX.Element {
   }
 
   return (
-    <div className="h-screen overflow-hidden flex bg-p5-cream text-p5-dark">
-      <NavRail activePath="/scouting" />
+    <div className="h-screen overflow-hidden flex bg-p5-cream text-p5-dark flex-1 min-w-0">
       <main className="flex-1 min-w-0 min-h-0 flex flex-col">
         {/* Header */}
         <div className="shrink-0 px-6 md:px-10 py-5 border-b border-p5-dark-line bg-p5-cream/95">
-          <div className="flex items-center gap-4">
-            <h1 className="text-[clamp(28px,4vw,44px)] font-black tracking-tight text-p5-dark leading-none">
-              FINDINGS
-            </h1>
-            <span className="text-[12px] font-mono text-p5-dark-muted">
-              {filtered.length} / {allFindings?.length ?? 0}
-            </span>
-            <div className="ml-auto flex items-center gap-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+            <div className="flex items-center gap-4">
+              <h1 className="text-[clamp(28px,4vw,44px)] font-black tracking-tight text-p5-dark leading-none">
+                FINDINGS
+              </h1>
+              <span className="text-[12px] font-mono text-p5-dark-muted">
+                {filtered.length} / {allFindings?.length ?? 0}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 sm:ml-auto">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-p5-muted" />
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search findings…"
-                  className="pl-9 h-9 w-52 text-[12px] bg-white border border-p5-dark-line text-p5-dark placeholder:text-p5-dark-muted outline-none focus:border-accent transition"
+                  className="pl-9 h-12 sm:h-9 w-full sm:w-52 text-[16px] sm:text-[12px] bg-white border border-p5-dark-line text-p5-dark placeholder:text-p5-dark-muted outline-none focus:border-accent transition"
                 />
               </div>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as 'updated' | 'type')}
-                className="text-[12px] h-9 px-2 bg-white border border-p5-dark-line text-p5-dark outline-none focus:border-accent"
+                className="text-[12px] h-12 sm:h-9 px-2 bg-white border border-p5-dark-line text-p5-dark outline-none focus:border-accent"
               >
                 <option value="updated">Newest first</option>
                 <option value="type">By type</option>
@@ -195,7 +195,7 @@ export function FindingsListPage(): React.JSX.Element {
                   key={t}
                   onClick={() => setTypeFilter(t)}
                   className={cn(
-                    'text-[11px] font-black uppercase tracking-wider px-3 py-1.5 border transition',
+                    'text-[11px] font-black uppercase tracking-wider px-3 py-1.5 min-h-[44px] sm:min-h-0 inline-flex items-center border transition',
                     active
                       ? 'bg-accent text-white border-accent'
                       : 'border-p5-dark-line text-p5-dark-muted hover:text-p5-dark hover:border-p5-dark/60',
@@ -257,7 +257,7 @@ export function FindingsListPage(): React.JSX.Element {
         </div>
 
         {/* Keyboard hint bar */}
-        <div className="shrink-0 px-6 py-2 border-t border-p5-dark-line bg-p5-cream text-[10px] font-mono text-p5-dark-muted flex items-center gap-4">
+        <div className="shrink-0 px-6 py-2 border-t border-p5-dark-line bg-p5-cream text-[10px] font-mono text-p5-dark-muted hidden sm:flex items-center gap-4">
           <span><kbd className="text-p5-dark">j</kbd>/<kbd className="text-p5-dark">k</kbd> navigate</span>
           <span><kbd className="text-p5-dark">⏎</kbd> discuss</span>
           <span><kbd className="text-p5-dark">esc</kbd> clear</span>
@@ -352,7 +352,7 @@ const DeckCard = React.forwardRef<HTMLDivElement, DeckCardProps>(function DeckCa
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center gap-1.5 text-[11px] font-mono text-text-secondary bg-surface-1 border border-border-default px-2 py-1 max-w-[360px] truncate hover:bg-surface-2 transition"
+              className="inline-flex items-center gap-1.5 text-[11px] font-mono text-text-secondary bg-surface-1 border border-border-default px-2 py-1 max-w-full truncate hover:bg-surface-2 transition"
             >
               <ExternalLink className="w-3 h-3 shrink-0 text-text-quaternary" />
               {url}
@@ -391,17 +391,17 @@ const DeckCard = React.forwardRef<HTMLDivElement, DeckCardProps>(function DeckCa
         ) : null}
 
         {/* Actions rail */}
-        <div className="mt-4 pt-3 border-t-2 border-black/10 flex items-center gap-2">
+        <div className="mt-4 pt-3 border-t-2 border-black/10 flex flex-wrap items-center gap-2">
           <Link
             to={`/objects/${obj.id}/discuss`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1.5 text-[12px] font-black uppercase tracking-wider px-3.5 py-1.5 bg-accent text-white hover:bg-accent-hover transition"
+            className="inline-flex items-center gap-1.5 text-[12px] font-black uppercase tracking-wider px-3.5 py-1.5 min-h-[44px] sm:min-h-0 bg-accent text-white hover:bg-accent-hover transition"
           >
             <MessageSquare className="w-3.5 h-3.5" />
             Discuss
           </Link>
           <DeckFeedback objectId={obj.id} />
-          <span className="ml-auto text-[10px] font-mono text-black/40">ENTER TO DISCUSS</span>
+          <span className="ml-auto text-[10px] font-mono text-black/40 hidden sm:inline">ENTER TO DISCUSS</span>
         </div>
       </div>
     </div>
@@ -459,7 +459,7 @@ function DeckFeedback({ objectId }: { objectId: string }): React.JSX.Element {
             }
             void send(kind);
           }}
-          className="w-7 h-7 flex items-center justify-center text-black/50 border border-black/15 bg-black/[0.03] hover:bg-black hover:text-white hover:border-black transition disabled:opacity-50"
+          className="w-11 h-11 sm:w-7 sm:h-7 flex items-center justify-center text-black/50 border border-black/15 bg-black/[0.03] hover:bg-black hover:text-white hover:border-black transition disabled:opacity-50"
 
         >
           <Icon className="w-3.5 h-3.5" />
@@ -467,7 +467,7 @@ function DeckFeedback({ objectId }: { objectId: string }): React.JSX.Element {
       ))}
       {suggestOpen ? (
         <form
-          className="flex items-center gap-1.5"
+          className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 basis-full sm:basis-auto mt-1 sm:mt-0"
           onSubmit={(e) => {
             e.preventDefault();
             if (suggestText.trim()) void send('suggest', suggestText.trim());
@@ -475,16 +475,15 @@ function DeckFeedback({ objectId }: { objectId: string }): React.JSX.Element {
           onClick={(e) => e.stopPropagation()}
         >
           <input
-            autoFocus
             value={suggestText}
             onChange={(e) => setSuggestText(e.target.value)}
             placeholder="What would you rather see?"
-            className="h-7 text-[11px] w-56 px-2 bg-black/[0.03] border border-black/15 text-black placeholder:text-black/40 outline-none focus:border-accent"
+            className="h-12 sm:h-7 text-[16px] sm:text-[11px] flex-1 min-w-0 sm:w-56 sm:flex-none px-2 bg-black/[0.03] border border-black/15 text-black placeholder:text-black/40 outline-none focus:border-accent"
           />
           <button
             type="submit"
             disabled={!suggestText.trim() || busy}
-            className="text-[11px] font-black uppercase tracking-wider px-2.5 h-7 bg-black text-white hover:opacity-85 transition disabled:opacity-40"
+            className="text-[11px] font-black uppercase tracking-wider px-2.5 h-12 sm:h-7 min-w-[64px] bg-black text-white hover:opacity-85 transition disabled:opacity-40"
           >
             Send
           </button>

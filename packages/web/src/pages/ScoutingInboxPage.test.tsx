@@ -126,21 +126,18 @@ describe('ScoutingInboxPage', () => {
     });
   });
 
-  it('renders the page header and category cards even with no scouts', async () => {
+  it('renders the page header and roster even with no scouts', async () => {
     vi.spyOn(api, 'subscriptions').mockResolvedValue({ subscriptions: [] });
     vi.spyOn(api, 'listObjects').mockResolvedValue({ objects: [], nextCursor: null });
 
     renderPage(<ScoutingInboxPage />);
 
     expect(screen.getByRole('heading', { name: /scouting/i, level: 1 })).toBeInTheDocument();
-    // 8 category cards rendered (raw names from categories table)
-    const jobsCard = await screen.findByText(/^job$/i);
-    expect(jobsCard).toBeInTheDocument();
-    expect(screen.getByText(/^startup$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^saas_idea$/i)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /new scout/i })).toBeInTheDocument();
+    expect(await screen.findByText(/no scouts yet/i)).toBeInTheDocument();
   });
 
-  it('shows a scout in the table when one exists', async () => {
+  it('shows a scout in the roster deck when one exists', async () => {
     const s = makeSubscription();
     vi.spyOn(api, 'subscriptions').mockResolvedValue({ subscriptions: [s] });
     vi.spyOn(api, 'listObjects').mockResolvedValue({ objects: [], nextCursor: null });
@@ -162,12 +159,12 @@ describe('ScoutingInboxPage', () => {
 
     renderPage(<ScoutingInboxPage />);
 
-    // The scout name appears in the table row AND in the detail panel
-    // header. Scope to the first matching row.
+    // The scout name appears in the card title AND the expanded file.
+    // Scope to the first matching article.
     const matches = await screen.findAllByText(/ESPHome new projects/i);
-    const row = matches[0]!.closest('tr')!;
-    expect(within(row).getByText(/github:esphome/i)).toBeInTheDocument();
-    expect(within(row).getByText(/^Daily$/)).toBeInTheDocument();
+    const card = matches[0]!.closest('article')!;
+    expect(within(card).getByText(/github:esphome/i)).toBeInTheDocument();
+    expect(within(card).getAllByText(/^Daily$/).length).toBeGreaterThan(0);
   });
 
   it('clicking Run Now calls runScoutNow', async () => {
@@ -219,7 +216,40 @@ describe('ScoutingInboxPage', () => {
     });
   });
 
-  it('shows real metrics in the Overview tab when metrics load', async () => {
+  it('starts with no operative file expanded', async () => {
+    const s = makeSubscription();
+    vi.spyOn(api, 'subscriptions').mockResolvedValue({ subscriptions: [s] });
+    vi.spyOn(api, 'listObjects').mockResolvedValue({ objects: [], nextCursor: null });
+    vi.spyOn(api, 'scoutMetrics').mockResolvedValue({
+      totalRuns: 0, succeededRuns: 0, failedRuns: 0, cancelledRuns: 0,
+      last7DaysRuns: 0, last7DaysSucceeded: 0, avgRuntimeMs: null,
+      opportunitiesCreated: 0, topSources: [], lastSuccessAt: null, lastRunAt: null,
+    });
+    vi.spyOn(api, 'scoutRuns').mockResolvedValue({ runs: [] });
+    vi.spyOn(api, 'scoutFindings').mockResolvedValue({ objects: [] });
+    renderPage(<ScoutingInboxPage />);
+    await screen.findByText(/ESPHome new projects/i);
+    expect(screen.queryByText(/operative file/i)).not.toBeInTheDocument();
+  });
+
+  it('opens the operative file when a scout card is clicked', async () => {
+    const s = makeSubscription();
+    const user = userEvent.setup();
+    vi.spyOn(api, 'subscriptions').mockResolvedValue({ subscriptions: [s] });
+    vi.spyOn(api, 'listObjects').mockResolvedValue({ objects: [], nextCursor: null });
+    vi.spyOn(api, 'scoutMetrics').mockResolvedValue({
+      totalRuns: 0, succeededRuns: 0, failedRuns: 0, cancelledRuns: 0,
+      last7DaysRuns: 0, last7DaysSucceeded: 0, avgRuntimeMs: null,
+      opportunitiesCreated: 0, topSources: [], lastSuccessAt: null, lastRunAt: null,
+    });
+    vi.spyOn(api, 'scoutRuns').mockResolvedValue({ runs: [] });
+    vi.spyOn(api, 'scoutFindings').mockResolvedValue({ objects: [] });
+    renderPage(<ScoutingInboxPage />);
+    await user.click(await screen.findByText(/ESPHome new projects/i));
+    expect(await screen.findByText(/operative file/i)).toBeInTheDocument();
+  });
+
+  it('shows real metrics in the operative dossier when metrics load', async () => {
     const s = makeSubscription();
     vi.spyOn(api, 'subscriptions').mockResolvedValue({ subscriptions: [s] });
     vi.spyOn(api, 'listObjects').mockResolvedValue({ objects: [], nextCursor: null });
@@ -242,7 +272,11 @@ describe('ScoutingInboxPage', () => {
     vi.spyOn(api, 'scoutRuns').mockResolvedValue({ runs: [] });
     vi.spyOn(api, 'scoutFindings').mockResolvedValue({ objects: [makeOpportunity()] });
 
+    const user = userEvent.setup();
     renderPage(<ScoutingInboxPage />);
+
+    // Open the operative file first.
+    await user.click(await screen.findByText(/ESPHome new projects/i));
 
     await waitFor(() => {
       expect(screen.getByText('42')).toBeInTheDocument();
@@ -272,51 +306,35 @@ describe('ScoutingInboxPage', () => {
     vi.spyOn(api, 'scoutRuns').mockResolvedValue({ runs: [] });
     vi.spyOn(api, 'scoutFindings').mockResolvedValue({ objects: [] });
 
+    const user = userEvent.setup();
     renderPage(<ScoutingInboxPage />);
 
+    // Open the operative file, then assert no fake defaults appear.
+    await user.click(await screen.findByText(/ESPHome new projects/i));
+
     await waitFor(() => {
-      expect(screen.getByText(/ESPHome new projects/i)).toBeInTheDocument();
+      expect(screen.getByText(/operative file/i)).toBeInTheDocument();
     });
     // No fake hardcoded 95% or 2m 34s anywhere
     expect(screen.queryByText('95%')).not.toBeInTheDocument();
     expect(screen.queryByText(/2m 34s/i)).not.toBeInTheDocument();
   });
 
-  it('groups findings into the matching category bucket', async () => {
+  it('labels each scout with its category in the roster card', async () => {
     const s = makeSubscription({ category: 'iot' });
     vi.spyOn(api, 'subscriptions').mockResolvedValue({ subscriptions: [s] });
-    // The page now fetches by type; we return the same list for
-    // any type filter (the page only reads body.kind/category_id).
-    vi.spyOn(api, 'listObjects').mockImplementation(async (params?: { type?: string }) => {
-      if (params?.type !== 'opportunity') return { objects: [], nextCursor: null };
-      return {
-        objects: [
-          makeOpportunity({ id: 'o-iot-1', status: 'open' }) as never,
-          makeOpportunity({ id: 'o-iot-2', status: 'open' }) as never,
-          makeOpportunity({ id: 'o-job-1', status: 'open' }) as never,
-        ].map((o, i) => {
-          const kind = i < 2 ? 'iot' : 'job';
-          return { ...(o as object), body: { kind } } as unknown as typeof o;
-        }),
-        nextCursor: null,
-      };
+    vi.spyOn(api, 'listObjects').mockResolvedValue({ objects: [], nextCursor: null });
+    vi.spyOn(api, 'scoutMetrics').mockResolvedValue({
+      totalRuns: 0, succeededRuns: 0, failedRuns: 0, cancelledRuns: 0,
+      last7DaysRuns: 0, last7DaysSucceeded: 0, avgRuntimeMs: null,
+      opportunitiesCreated: 0, topSources: [], lastSuccessAt: null, lastRunAt: null,
     });
-    vi.spyOn(api, 'categories').mockResolvedValue({
-      categories: [
-        makeCategory({ id: 'cat-iot', name: 'iot', color: 'sky', icon: 'radar' }),
-        makeCategory({ id: 'cat-job', name: 'job', color: 'emerald', icon: 'briefcase' }),
-      ],
-    });
+    vi.spyOn(api, 'scoutRuns').mockResolvedValue({ runs: [] });
+    vi.spyOn(api, 'scoutFindings').mockResolvedValue({ objects: [] });
     renderPage(<ScoutingInboxPage />);
-    // Both iot and job categories should appear in the dashboard
-    // (cards, table, or both). We don't pin the exact location
-    // because the findings-driven counter changed the layout.
-    await waitFor(() => {
-      expect(screen.queryAllByText('iot').length).toBeGreaterThan(0);
-    });
-    await waitFor(() => {
-      expect(screen.queryAllByText('job').length).toBeGreaterThan(0);
-    });
+    const matches = await screen.findAllByText(/ESPHome new projects/i);
+    const card = matches[0]!.closest('article')!;
+    expect(within(card).getByText(/iot/i)).toBeInTheDocument();
   });
 
   it('filters scouts by All / Active / Paused / Archived', async () => {
@@ -335,38 +353,36 @@ describe('ScoutingInboxPage', () => {
     const user = userEvent.setup();
     renderPage(<ScoutingInboxPage />);
 
-    // The detail panel auto-selects the first scout and shows its name
-    // in an H2. We only want to assert against the *table* rows, so we
-    // find the table by its columns.
-    const findTableRow = async (name: string): Promise<HTMLElement | null> => {
-      const rows = screen.queryAllByRole('row');
-      for (const r of rows) {
-        if (r.textContent?.includes(name)) return r;
+    // The dossier auto-expands the first scout; cards carry role="article".
+    const findCard = async (name: string): Promise<HTMLElement | null> => {
+      const cards = screen.queryAllByRole('article');
+      for (const c of cards) {
+        if (c.textContent?.includes(name)) return c;
       }
       return null;
     };
 
-    // Default filter is "active" -> only Active one in the table.
+    // Default filter is "active" -> only Active one in the deck.
     await waitFor(async () => {
-      const row = await findTableRow('Active one');
-      expect(row).not.toBeNull();
+      const card = await findCard('Active one');
+      expect(card).not.toBeNull();
     });
-    expect(await findTableRow('Paused one')).toBeNull();
+    expect(await findCard('Paused one')).toBeNull();
 
-    // Click "All" -> both in the table.
+    // Click "All" -> both in the deck.
     await user.click(screen.getByRole('button', { name: /^all$/i }));
     await waitFor(async () => {
-      const row = await findTableRow('Paused one');
-      expect(row).not.toBeNull();
+      const card = await findCard('Paused one');
+      expect(card).not.toBeNull();
     });
 
-    // Click "Paused" -> only paused one in the table.
+    // Click "Paused" -> only paused one in the deck.
     await user.click(screen.getByRole('button', { name: /^paused$/i }));
     await waitFor(async () => {
-      const row = await findTableRow('Active one');
-      expect(row).toBeNull();
+      const card = await findCard('Active one');
+      expect(card).toBeNull();
     });
-    expect(await findTableRow('Paused one')).not.toBeNull();
+    expect(await findCard('Paused one')).not.toBeNull();
   });
 
   it('has a "Hermes Feed →" link in the header that points to /feed', async () => {

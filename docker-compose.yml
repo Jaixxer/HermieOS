@@ -63,7 +63,7 @@ services:
     environment:
       # SEARXNG_SECRET is read at startup and substituted into settings.yml's
       # server.secret_key. Rotate to invalidate cached cookies.
-      SEARXNG_SECRET: ${SEARXNG_SECRET:-REDACTED_SEARXNG_SECRET}
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-change-me-local-dev}
       SEARXNG_BIND_ADDRESS: "0.0.0.0:8080"
       # What Hermes uses to reach SearXNG inside the compose network.
       SEARXNG_BASE_URL: http://searxng:8080
@@ -92,6 +92,10 @@ services:
       HERMES_GATEWAY_URL: ${HERMES_GATEWAY_URL:-http://hermes:8642}
       HERMES_PUBLIC_URL: ${HERMES_PUBLIC_URL:-}
       HERMES_API_KEY: ${HERMES_API_KEY:-}
+      HERMES_DASHBOARD_URL: ${HERMES_DASHBOARD_URL:-http://hermes:9119}
+      HERMES_DASHBOARD_PUBLIC_URL: ${HERMES_DASHBOARD_PUBLIC_URL:-http://localhost:9119}
+      HERMES_DASHBOARD_USERNAME: ${HERMES_DASHBOARD_USERNAME:-hermieos}
+      HERMES_DASHBOARD_PASSWORD: ${HERMES_DASHBOARD_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -199,11 +203,18 @@ services:
     environment:
       HERMES_HOME: /opt/data
       HERMES_DASHBOARD: ${HERMES_DASHBOARD:-1}
+      # Dashboard auth — the dashboard hosts /api/ws (the TUI gateway
+      # used for steer / interrupt / approvals). A non-loopback bind
+      # requires an auth provider or the dashboard fails closed.
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: ${HERMES_DASHBOARD_USERNAME:-hermieos}
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: ${HERMES_DASHBOARD_PASSWORD:-}
+      # Browser/mobile origins allowed to call Hermes' API server directly.
+      API_SERVER_CORS_ORIGINS: ${API_SERVER_CORS_ORIGINS:-http://localhost,https://localhost}
       # The cached credential in auth.json was originally sourced from
       # the OPENCODE_GO_API_KEY env var. Without it, the credential is
       # considered stale. Override here to keep the cached model working.
       # (For production, rotate to a fresh API key and `hermes auth add`.)
-      OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-REDACTED_OPENAI_API_KEY}
+      OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:-}
       # Web search via the local SearXNG container. Inside the compose
       # network searxng is reachable as http://searxng:8080.
       SEARXNG_URL: http://searxng:8080

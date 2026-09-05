@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { api, type ObjectSummary } from '../api';
 import { useServer } from '../server';
-import { Sidebar } from '../components/Sidebar';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
@@ -76,9 +75,8 @@ export function KnowledgePage(): React.JSX.Element {
   const objects = browseQ.data?.objects ?? [];
 
   return (
-    <div className="min-h-screen flex bg-page text-text-primary">
-      <Sidebar activePath="/knowledge" className="hidden lg:flex" />
-      <main className="flex-1 p-6 lg:p-8 max-w-[1100px] mx-auto w-full">
+    <div className="flex bg-page text-text-primary flex-1 min-w-0 min-h-0">
+      <main className="flex-1 min-w-0 min-h-0 overflow-y-auto p-6 lg:p-8 max-w-[1100px] mx-auto w-full">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-600 flex items-center justify-center">
             <Lightbulb className="w-5 h-5" />
@@ -141,7 +139,7 @@ export function KnowledgePage(): React.JSX.Element {
         ) : (
           <>
             {/* Browse by type */}
-            <div className="flex flex-wrap gap-2 mb-5">
+            <div className="flex gap-2 mb-5 overflow-x-auto sm:flex-wrap pb-1 -mx-1 px-1">
               <TypePill active={activeType === 'all'} label="All" onClick={() => setActiveType('all')} />
               {TYPE_ORDER.map((t) => {
                 const M = TYPE_META[t]!;
@@ -176,7 +174,7 @@ export function KnowledgePage(): React.JSX.Element {
                     <Link
                       key={o.id}
                       to={`/objects/${o.id}`}
-                      className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-border-default bg-surface-0 hover:border-border-strong transition"
+                      className="flex items-center gap-3 px-4 py-3 sm:py-2.5 min-h-[48px] sm:min-h-0 rounded-lg border border-border-default bg-surface-0 hover:border-border-strong transition"
                     >
                       <Icon className={cn('w-4 h-4 shrink-0', M?.tone)} />
                       <div className="flex-1 min-w-0">
@@ -225,11 +223,24 @@ export function KnowledgePage(): React.JSX.Element {
                 No relationships yet. Hermes links related objects as it works.
               </div>
             ) : (
-              <GraphPreview
-                nodes={graphQ.data?.nodes ?? []}
-                links={graphQ.data?.links ?? []}
-                onSelect={(id) => navigate(`/objects/${id}`)}
-              />
+              <>
+                <div className="hidden sm:block">
+                  <GraphPreview
+                    nodes={graphQ.data?.nodes ?? []}
+                    links={graphQ.data?.links ?? []}
+                    onSelect={(id) => navigate(`/objects/${id}`)}
+                  />
+                </div>
+                <Link
+                  to="/graph"
+                  className="flex min-h-[48px] items-center justify-between border border-border-default bg-surface-0 px-4 py-3 sm:hidden"
+                >
+                  <span className="text-[13px] font-medium text-text-primary">
+                    {graphQ.data?.nodes.length ?? 0} relationships — open the interactive graph
+                  </span>
+                  <span className="text-accent-text">→</span>
+                </Link>
+              </>
             )}
           </CardContent>
         </Card>
@@ -256,7 +267,7 @@ function TypePill({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition',
+        'flex shrink-0 items-center gap-1.5 px-3 py-1.5 min-h-[44px] sm:min-h-0 rounded-full text-[12px] font-medium border transition',
         active
           ? 'bg-accent text-accent-fg border-accent'
           : 'bg-surface-0 text-text-secondary border-border-default hover:border-border-strong hover:text-text-primary',

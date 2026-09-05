@@ -279,6 +279,23 @@ export function setApiBase(url: string): void {
   _base = url ? url.replace(/\/+$/, '') : DEFAULT_BASE;
 }
 
+/** Rewrite a localhost/127.0.0.1 host on the given URL to the API base
+ *  host. Hermes on a separate port returns base/WS URLs tied to the loopback
+ *  of the server box, which the phone can't reach — so the web app rewrites
+ *  them onto the host the user actually configured for the API. */
+function rehostToApiBase(remoteUrl: string): string {
+  try {
+    const u = new URL(remoteUrl);
+    const api = new URL(_base);
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '::1') {
+      u.hostname = api.hostname;
+    }
+    return u.toString();
+  } catch {
+    return remoteUrl;
+  }
+}
+
 // ============================================================================
 // Chat (Hermes Agent gateway)
 // ============================================================================
@@ -838,7 +855,10 @@ export const api = {
 
   /** Returns the user's Hermes base URL + MCP bearer token. */
   hermesInfo(): Promise<HermesInfo> {
-    return request('/me/hermes-info');
+    return request<HermesInfo>('/me/hermes-info').then((info) => ({
+      ...info,
+      baseUrl: rehostToApiBase(info.baseUrl),
+    }));
   },
 
   /** List all persisted Hermes sessions across every gateway/source. */
@@ -889,12 +909,24 @@ export const api = {
     system_message?: string;
     /** Per-message agent toggles, e.g. { yolo: true, model: "..." } */
     model_options?: Record<string, unknown>;
-  }): Promise<HermesChatResult> {
+  }, signal?: AbortSignal): Promise<HermesChatResult> {
     return hermesRequest<HermesChatResult>(
       info,
       `/api/sessions/${encodeURIComponent(sessionId)}/chat`,
-      { method: 'POST', body: JSON.stringify(body) },
+      { method: 'POST', body: JSON.stringify(body), signal },
     );
+  },
+
+  /** Mint a single-use WebSocket ticket for the Hermes TUI gateway. */
+  async dashboardTicket(): Promise<{ wsUrl: string; ticket: string; provider: string }> {
+    const res = await fetch(`${_base}/hermes/dashboard-ticket`, {
+      method: 'POST',
+      credentials: _token ? 'same-origin' : 'include',
+      headers: _token ? { authorization: `Bearer ${_token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, null, `HTTP ${res.status}`);
+    const data = (await res.json()) as { wsUrl: string; ticket: string; provider: string };
+    return { ...data, wsUrl: rehostToApiBase(data.wsUrl) };
   },
 };
 

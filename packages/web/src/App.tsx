@@ -1,9 +1,10 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import * as React from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from './auth';
 import { useServer } from './server';
-import { Layout } from './components/Layout';
-import { DesktopShell } from './DesktopShell';
+import { initMobile } from './mobile';
+import { AppShell } from './components/AppShell';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { ConnectPage } from './pages/ConnectPage';
@@ -20,11 +21,8 @@ import { CalendarPage } from './pages/CalendarPage';
 import { FeedPage } from './pages/FeedPage';
 import { ChatPage } from './pages/ChatPage';
 import { MissionPage } from './pages/MissionPage';
-import { OpportunitiesPage } from './pages/OpportunitiesPage';
 import { KnowledgePage } from './pages/KnowledgePage';
-import { isTauri } from './tauri';
 
-const Shell = isTauri() ? DesktopShell : Layout;
 
 function RequireAuth({ children }: { children: ReactNode }): React.JSX.Element {
   const { user, loading } = useAuth();
@@ -36,6 +34,19 @@ function RequireAuth({ children }: { children: ReactNode }): React.JSX.Element {
 
 export function App(): React.JSX.Element {
   const { connected } = useServer();
+  const nav = useNavigate();
+  const loc = useLocation();
+  const pathRef = React.useRef(loc.pathname);
+  pathRef.current = loc.pathname;
+
+  // Native back button (Android): step SPA history, exit at root.
+  React.useEffect(() => {
+    initMobile(() => {
+      if (pathRef.current === '/') return false;
+      nav(-1);
+      return true;
+    });
+  }, [nav]);
 
   // The connect page is only shown when there's no session at all
   // (no MCP token + no email session). An email/password user who
@@ -58,144 +69,24 @@ export function App(): React.JSX.Element {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
-      <Route
-        path="/"
-        element={
-          <RequireAuth>
-            <DashboardPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/objects/:id"
-        element={
-          <RequireAuth>
-            <Shell />
-          </RequireAuth>
-        }
-      >
-        <Route index element={<ObjectDetailPage />} />
+      <Route element={<RequireAuth><AppShell /></RequireAuth>}>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/objects/:id" element={<ObjectDetailPage />} />
+        <Route path="/objects/:id/discuss" element={<FindingChatPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/mcp-token" element={<McpTokenPage />} />
+        <Route path="/scouting" element={<ScoutingInboxPage />} />
+        <Route path="/scouting/findings" element={<FindingsListPage />} />
+        <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/feed" element={<FeedPage />} />
+        <Route path="/mission" element={<MissionPage />} />
+        <Route path="/opportunities" element={<Navigate to="/scouting/findings" replace />} />
+        <Route path="/chat" element={<ChatPage />} />
+        <Route path="/chat/:sessionId" element={<ChatPage />} />
+        <Route path="/knowledge" element={<KnowledgePage />} />
+        <Route path="/subscriptions" element={<SubscriptionsPage />} />
+        <Route path="/graph" element={<GraphPage />} />
       </Route>
-      <Route
-        path="/objects/:id/discuss"
-        element={
-          <RequireAuth>
-            <FindingChatPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/subscriptions"
-        element={
-          <RequireAuth>
-            <Shell />
-          </RequireAuth>
-        }
-      >
-        <Route index element={<SubscriptionsPage />} />
-      </Route>
-      <Route
-        path="/settings"
-        element={
-          <RequireAuth>
-            <Shell />
-          </RequireAuth>
-        }
-      >
-        <Route index element={<SettingsPage />} />
-      </Route>
-      <Route
-        path="/settings/mcp-token"
-        element={
-          <RequireAuth>
-            <Shell />
-          </RequireAuth>
-        }
-      >
-        <Route index element={<McpTokenPage />} />
-      </Route>
-      <Route
-        path="/graph"
-        element={
-          <RequireAuth>
-            <Shell />
-          </RequireAuth>
-        }
-      >
-        <Route index element={<GraphPage />} />
-      </Route>
-      <Route
-        path="/scouting"
-        element={
-          <RequireAuth>
-            <ScoutingInboxPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/scouting/findings"
-        element={
-          <RequireAuth>
-            <FindingsListPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/calendar"
-        element={
-          <RequireAuth>
-            <CalendarPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/feed"
-        element={
-          <RequireAuth>
-            <FeedPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/mission"
-        element={
-          <RequireAuth>
-            <MissionPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/opportunities"
-        element={
-          <RequireAuth>
-            <OpportunitiesPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/knowledge"
-        element={
-          <RequireAuth>
-            <KnowledgePage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/chat"
-        element={
-          <RequireAuth>
-            <ChatPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/chat/:sessionId"
-        element={
-          <RequireAuth>
-            <ChatPage />
-          </RequireAuth>
-        }
-      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

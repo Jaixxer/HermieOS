@@ -9,7 +9,6 @@ export const scoutKeys = {
   metrics: (id: string) => ['scout-metrics', id] as const,
   runs: (id: string) => ['scout-runs', id] as const,
   findings: (id: string) => ['scout-findings', id] as const,
-  opportunities: ['opportunities'] as const,
 };
 
 export const categoryKeys = {

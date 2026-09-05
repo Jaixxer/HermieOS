@@ -57,6 +57,10 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Open at 90% zoom — the layout is tuned for a slightly denser
+      // viewport, and 100% (actual size) makes the editorial type feel
+      // oversized in the default 1200x800 window.
+      zoomFactor: 0.9,
     },
   });
 

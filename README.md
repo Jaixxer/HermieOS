@@ -2,9 +2,6 @@
 
 A personal operating system around Hermes Agent. The long-running agent is the brain; HermieOS is the persistence, presentation, and tool surface around it.
 
-- Spec: [`SPEC.md`](./SPEC.md)
-- Docs: [`docs/`](./docs/) — **start with [docs/guide.md](./docs/guide.md)** (the codebase map for agents), then [decisions.md](./docs/decisions.md) and [roadmap.md](./docs/roadmap.md)
-
 ## Status
 
 Feature-complete through Phase 10.6 + Phase 11: dashboard redesign (Mission / Opportunities / Knowledge pages), notifications pipeline with native OS notifications in the desktop app, knowledge graph + settings improvements, two-way Google Calendar sync — plus finding conversations: a dedicated discuss page per finding, immediate follow-ups (chat or tracked background runs) that record raw feedback, a snap-scrolling findings deck, and scout self-tuning via MCP (Hermes can retune its own scouts; every run is visible in the Feed). All wired to a real Hermes instance (or the "fake Hermes" stand-in for the demo loop).

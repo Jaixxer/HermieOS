@@ -33,6 +33,7 @@
     "perf": "pnpm --filter @hermieos/scripts perf",
     "hermes:profile-gen": "pnpm --filter @hermieos/scripts hermes-profile-gen",
     "hermes:probe": "pnpm --filter @hermieos/scripts hermes-probe",
+    "hermes:mcp-register": "pnpm --filter @hermieos/scripts hermes-mcp-register",
     "hermes:skills-deploy": "pnpm --filter @hermieos/scripts hermes-skills-deploy"
   },
   "devDependencies": {

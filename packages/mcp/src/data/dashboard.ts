@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, isNull, lt, not, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, lt, not, sql } from 'drizzle-orm';
 import { schema } from '@hermieos/db';
 import { getDb } from './db.js';
 import { listTasks, type TaskRow } from './tasks.js';
@@ -187,8 +187,10 @@ export async function getDashboard(userId: string): Promise<DashboardData> {
         .where(
           and(
             eq(schema.categories.userId, userId),
-            // Use a SQL in-list since drizzle's `inArray` works too
-            sql`${schema.categories.id} = ANY(${categoryIds}::uuid[])`,
+            // inArray binds the id list as a proper array parameter —
+            // a raw `ANY(${ids}::uuid[])` template sends a bare string
+            // through postgres.js and dies with "malformed array literal".
+            inArray(schema.categories.id, categoryIds),
           ),
         );
   const categoryById = new Map(

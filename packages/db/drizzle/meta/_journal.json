@@ -5,58 +5,98 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1784445976394,
+      "when": 1785904471697,
       "tag": "0000_certain_star_brand",
-      "breakpoints": true
+      "breakpoints": true,
+      "hash": "6c0c174a58da04b0da9a08361eb504adfd0947ee2f705c6dfca84ba8df6ce72d"
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1784445980000,
+      "when": 1785904471699,
       "tag": "0001_add_object_search_vector",
-      "breakpoints": true
+      "breakpoints": true,
+      "hash": "bd16b8f31fd2a51cc43e674dd446f8e62fdfa3b72527d7a0c2106910e055f6d0"
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1784446705202,
-      "tag": "0002_famous_shooting_star",
-      "breakpoints": true
+      "when": 1785904471700,
+      "tag": "0002_add_priority_changed_enum",
+      "breakpoints": true,
+      "hash": "b4d3e436550336bce8a1b6f721c56752883dd9cda99aa0c7b4ff46f73a35c662"
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1784446713055,
-      "tag": "0003_true_reptil",
-      "breakpoints": true
+      "when": 1785904471701,
+      "tag": "0003_add_push_subscriptions",
+      "breakpoints": true,
+      "hash": "e9a71f7d8691c489853ae75c27027fa359bae2eb157decc949e5dabe22474641"
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1784446722407,
-      "tag": "0004_redundant_starjammers",
-      "breakpoints": true
+      "when": 1785904471702,
+      "tag": "0004_add_pgvector",
+      "breakpoints": true,
+      "hash": "39873f20990f0e54bac9462f269b822ee0e9634d35382802f07af5151907b24d"
     },
     {
       "idx": 5,
       "version": "7",
-      "when": 1784931624019,
+      "when": 1785904471703,
       "tag": "0005_mute_tigra",
-      "breakpoints": true
+      "breakpoints": true,
+      "hash": "03305eac7791eb9f16483fe648a037597cadf1906132547085617029e88373b3"
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785904471704,
+      "tag": "0006_drop_opportunities_add_subscription_category",
+      "breakpoints": true,
+      "hash": "318ed9a0ec55d6b2e3ef00499210e4a2f3e45ba43ec60ef1f8f9cf0c12332fb3"
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785904471705,
+      "tag": "0007_scouting_indexes",
+      "breakpoints": true,
+      "hash": "66fda57e54fdcb6862d5af082aec09e00851f73de417bcfdf67cd6701a61dabf"
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785904471706,
+      "tag": "0008_add_categories",
+      "breakpoints": true,
+      "hash": "281752d33a401d1ea22f36971e4af7128b389cde520dff6b91a150ce181355f8"
     },
     {
       "idx": 9,
       "version": "7",
-      "when": 1785219000000,
-      "tag": "0009_calendar",
-      "breakpoints": true
+      "when": 1785904471708,
+      "tag": "0008b_categories_backfill",
+      "breakpoints": true,
+      "hash": "e2e4be5cf0fec67ac68b1a7122cf8069c4b1b4bc7658475203365f6f3daf5744"
     },
     {
       "idx": 10,
       "version": "7",
-      "when": 1785500000000,
+      "when": 1785904471709,
+      "tag": "0009_calendar",
+      "breakpoints": true,
+      "hash": "edb9d86292277a79e2269483eebbe8f169f89f10421202c2237beb8966414051"
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785904471710,
       "tag": "0010_google_oauth_apps",
-      "breakpoints": true
+      "breakpoints": true,
+      "hash": "c61c1206c45cc68d87bd4e21e10743a4d89b2cc614c799f2d71418f19bdd878f"
     }
   ]
 }

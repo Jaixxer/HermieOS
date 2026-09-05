@@ -22,15 +22,53 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { api } from '../api';
-import { Button } from '../components/ui/button';
-import { Badge } from '../components/ui/badge';
-import { Card, CardContent } from '../components/ui/card';
 import { useScouts, useCategories } from '../hooks/data';
-import { formatRelative } from '../lib/utils';
+import { formatRelative, cn } from '../lib/utils';
 import { FeedbackButtons } from '../components/FeedbackButtons';
-import { Loading } from '../components/Loading';
+
+/**
+ * Object desk — one finding, fully unpacked. Editorial frame with the
+ * nav rail, serif title, red rule, hard-edged panels, mono metadata.
+ * All behavior preserved: overview / timeline / revisions / related.
+ */
 
 type Tab = 'overview' | 'timeline' | 'revisions' | 'related';
+
+// Hard-edged panel replacing the old rounded Card.
+function Panel({ children, className }: { children: React.ReactNode; className?: string }): React.JSX.Element {
+  return (
+    <section className={cn('border-2 border-black/15 bg-p5-panel p-5', className)}>
+      {children}
+    </section>
+  );
+}
+
+function PanelHead({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return <div className="p5-kicker text-p5-dark-muted mb-3">{children}</div>;
+}
+
+// Bordered mono chip replacing the old Badge.
+function Chip({
+  children,
+  tone = 'slate',
+}: {
+  children: React.ReactNode;
+  tone?: 'emerald' | 'sky' | 'amber' | 'purple' | 'rose' | 'slate';
+}): React.JSX.Element {
+  const cls: Record<string, string> = {
+    emerald: 'border-emerald-600/50 text-emerald-700',
+    sky: 'border-sky-600/50 text-sky-700',
+    amber: 'border-amber-500/60 text-amber-600',
+    purple: 'border-purple-600/50 text-purple-700',
+    rose: 'border-rose-600/50 text-rose-700',
+    slate: 'border-black/20 text-p5-dark-muted',
+  };
+  return (
+    <span className={cn('inline-flex items-center border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em]', cls[tone])}>
+      {children}
+    </span>
+  );
+}
 
 export function ObjectDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
@@ -45,65 +83,72 @@ export function ObjectDetailPage(): React.JSX.Element {
     queryFn: () => api.object(id),
   });
 
-  if (isLoading) {
-    return <Loading text="Loading…" />;
-  }
-  if (error || !data) return <NotFound />;
-
-  const obj = data.object;
-
   return (
-    <>
-      <ObjectHeader obj={obj} onBack={() => nav(-1)} />
+    <div className="flex bg-p5-cream text-p5-dark flex-1 min-w-0 min-h-0">
 
-      <div className="border-b border-border-default">
-        <nav className="flex gap-1">
-          {(['overview', 'timeline', 'revisions', 'related'] as Tab[]).map((t) => {
-            const meta: Record<Tab, { label: string; icon: React.ElementType; count?: number }> = {
-              overview: { label: 'Overview', icon: Lightbulb },
-              timeline: { label: 'Timeline', icon: History },
-              revisions: { label: 'Revisions', icon: Pencil },
-              related: { label: 'Related', icon: Link2, count: obj.related.length },
-            };
-            const M = meta[t];
-            const Icon = M.icon;
-            return (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium border-b-2 -mb-px transition ${
-                  tab === t
-                    ? 'border-accent-text text-text-primary'
-                    : 'border-transparent text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {M.label}
-                {M.count !== undefined && M.count > 0 ? (
-                  <span className="text-text-quaternary text-[11px]">({M.count})</span>
-                ) : null}
-              </button>
-            );
-          })}
-        </nav>
-      </div>
+      <main className="flex-1 min-w-0 min-h-0 overflow-y-auto px-6 py-8 md:px-10 lg:px-10 lg:py-10">
+        <div className="mx-auto max-w-[1128px]">
+          {isLoading ? (
+            <div className="py-24 text-center font-mono text-[12px] tracking-widest text-p5-dark-muted">LOADING THE OBJECT…</div>
+          ) : error || !data ? (
+            <NotFound />
+          ) : (
+            <>
+              <ObjectHeader obj={data.object} onBack={() => nav(-1)} />
 
-      <div className="py-6 max-w-5xl">
-        {tab === 'overview' ? <OverviewTab obj={obj} /> : null}
-        {tab === 'timeline' ? <TimelineTab objectId={id} /> : null}
-        {tab === 'revisions' ? <RevisionsTab objectId={id} qc={qc} /> : null}
-        {tab === 'related' ? <RelatedTab items={obj.related} /> : null}
-      </div>
-    </>
+              {/* Tabs */}
+              <div className="mt-7 flex gap-1 border-b border-black/10 overflow-x-auto">
+                {(['overview', 'timeline', 'revisions', 'related'] as Tab[]).map((t) => {
+                  const meta: Record<Tab, { label: string; icon: React.ElementType; count?: number }> = {
+                    overview: { label: 'Overview', icon: Lightbulb },
+                    timeline: { label: 'Timeline', icon: History },
+                    revisions: { label: 'Revisions', icon: Pencil },
+                    related: { label: 'Related', icon: Link2, count: data.object.related.length },
+                  };
+                  const M = meta[t];
+                  const Icon = M.icon;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setTab(t)}
+                      className={cn(
+                        'flex shrink-0 items-center gap-2 px-4 pb-2.5 pt-1 min-h-[44px] sm:min-h-0 text-[11px] font-black tracking-[0.14em] uppercase transition',
+                        tab === t
+                          ? 'border-b-2 border-accent text-p5-dark'
+                          : 'border-b-2 border-transparent text-p5-dark-muted hover:text-p5-dark',
+                      )}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {M.label}
+                      {M.count !== undefined && M.count > 0 ? (
+                        <span className="text-[10px] text-p5-dark-muted">({M.count})</span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="py-6">
+                {tab === 'overview' ? <OverviewTab obj={data.object} /> : null}
+                {tab === 'timeline' ? <TimelineTab objectId={id} /> : null}
+                {tab === 'revisions' ? <RevisionsTab objectId={id} qc={qc} /> : null}
+                {tab === 'related' ? <RelatedTab items={data.object.related} /> : null}
+              </div>
+            </>
+          )}
+        </div>
+      </main>
+    </div>
   );
 }
 
 function NotFound(): React.JSX.Element {
   return (
     <div className="space-y-2">
-      <p className="text-text-primary font-medium">Object not found</p>
-      <Link to="/" className="text-accent-text text-sm hover:underline">
-        Go home
+      <p className="font-p5-serif text-[24px] text-p5-dark">OBJECT NOT FOUND.</p>
+      <Link to="/" className="text-[12px] font-black tracking-[0.12em] text-accent hover:underline">
+        GO HOME
       </Link>
     </div>
   );
@@ -117,56 +162,48 @@ function ObjectHeader({
   onBack: () => void;
 }): React.JSX.Element {
   return (
-    <div className="pt-6 pb-4 border-b border-border-default">
+    <div>
       <button
+        type="button"
         onClick={onBack}
-        className="flex items-center gap-1.5 text-text-tertiary text-[12px] hover:text-text-primary transition mb-3"
+        className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] tracking-[0.12em] text-p5-dark-muted transition hover:text-p5-dark"
       >
-        <ArrowLeft className="w-3.5 h-3.5" /> Back
+        <ArrowLeft className="w-3.5 h-3.5" /> BACK
       </button>
 
-      <div className="flex items-start gap-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             <TypeBadge type={obj.type} />
             <StatusBadge status={obj.status} />
-            {obj.archivedAt ? (
-              <Badge tone="rose" variant="soft">
-                Archived
-              </Badge>
-            ) : null}
-            {obj.priority >= 4 ? (
-              <Badge tone="amber" variant="soft">
-                Priority {obj.priority}
-              </Badge>
-            ) : null}
+            {obj.archivedAt ? <Chip tone="rose">Archived</Chip> : null}
+            {obj.priority >= 4 ? <Chip tone="amber">Priority {obj.priority}</Chip> : null}
           </div>
-          <h1 className="text-[24px] font-semibold tracking-tight text-text-primary leading-tight">
+          <h1 className="relative inline-block font-p5-serif text-[clamp(28px,3.4vw,44px)] leading-[0.95] text-p5-dark">
             {obj.title}
+            <span className="absolute -bottom-2 left-0 h-[5px] w-full bg-accent" />
           </h1>
           {obj.summary ? (
-            <p className="mt-2 text-[14px] text-text-secondary leading-relaxed">{obj.summary}</p>
+            <p className="mt-4 max-w-3xl text-[14px] leading-relaxed text-p5-dark-muted">{obj.summary}</p>
           ) : null}
           {obj.tags.length > 0 ? (
-            <div className="mt-3 flex items-center gap-1.5 flex-wrap">
-              <Tag className="w-3.5 h-3.5 text-text-quaternary" />
+            <div className="mt-4 flex flex-wrap items-center gap-1.5">
+              <Tag className="h-3.5 w-3.5 text-p5-dark-muted" />
               {obj.tags.map((t) => (
-                <Badge key={t} tone="slate" variant="outline">
-                  {t}
-                </Badge>
+                <Chip key={t}>{t}</Chip>
               ))}
             </div>
           ) : null}
         </div>
 
-        <div className="flex flex-col gap-2 items-end shrink-0">
+        <div className="flex shrink-0 flex-row sm:flex-col sm:items-end gap-2">
           <FeedbackButtons objectId={obj.id} />
           <Link
             to={`/objects/${obj.id}/discuss`}
-            className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-text-primary text-page hover:opacity-90 transition"
+            className="inline-flex items-center justify-center gap-1.5 bg-accent px-4 py-2 min-h-[44px] sm:min-h-0 flex-1 sm:flex-none text-[11px] font-black tracking-[0.12em] text-white transition hover:bg-accent-hover"
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            Discuss
+            DISCUSS
           </Link>
         </div>
       </div>
@@ -183,32 +220,23 @@ function TypeBadge({ type }: { type: string }): React.JSX.Element {
     task: { label: 'Task', tone: 'slate' },
   };
   const m = meta[type] ?? { label: type, tone: 'slate' as const };
-  return (
-    <Badge tone={m.tone} variant="soft">
-      {m.label}
-    </Badge>
-  );
+  return <Chip tone={m.tone}>{m.label}</Chip>;
 }
 
 function StatusBadge({ status }: { status: string }): React.JSX.Element {
-  const meta: Record<string, { tone: 'emerald' | 'amber' | 'slate' | 'rose' }> = {
-    open: { tone: 'emerald' },
-    active: { tone: 'emerald' },
-    completed: { tone: 'emerald' },
-    pending: { tone: 'amber' },
-    archived: { tone: 'slate' },
-    failed: { tone: 'rose' },
+  const meta: Record<string, 'emerald' | 'amber' | 'slate' | 'rose'> = {
+    open: 'emerald',
+    active: 'emerald',
+    completed: 'emerald',
+    pending: 'amber',
+    archived: 'slate',
+    failed: 'rose',
   };
-  const m = meta[status] ?? { tone: 'slate' as const };
-  return (
-    <Badge tone={m.tone} variant="outline">
-      {status}
-    </Badge>
-  );
+  return <Chip tone={meta[status] ?? 'slate'}>{status}</Chip>;
 }
 
 // ============================================================================
-// Overview Tab — semantic layout per type
+// Overview Tab
 // ============================================================================
 
 function OverviewTab({ obj }: { obj: import('../api').ObjectDetail }): React.JSX.Element {
@@ -248,10 +276,6 @@ function OpportunityOverview({ obj }: { obj: import('../api').ObjectDetail }): R
   const author = body.author;
   const published = body.publishedDate;
 
-  // Known display fields we render as proper rows. Anything else in
-  // body is shown under "Additional fields" so unknown metadata still
-  // surfaces (e.g. cost_estimate, license, language) without dumping
-  // the whole body as JSON.
   const knownKeys = new Set([
     'url', 'source', 'target', 'kind', 'summary', 'subscriptionId',
     'category_id', 'stars', 'cost_estimate', 'language', 'topics',
@@ -261,75 +285,63 @@ function OpportunityOverview({ obj }: { obj: import('../api').ObjectDetail }): R
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2 space-y-6">
+      <div className="lg:col-span-2 space-y-5">
         {obj.summary ? (
-          <Card>
-            <CardContent className="p-6">
-              <p className="text-[15px] text-text-primary leading-relaxed">{obj.summary}</p>
-            </CardContent>
-          </Card>
+          <Panel>
+            <p className="text-[15px] leading-relaxed text-p5-dark">{obj.summary}</p>
+          </Panel>
         ) : null}
 
-        <Card>
-          <CardContent className="p-6 space-y-4">
-            <h2 className="text-[13px] font-semibold text-text-tertiary uppercase tracking-wider">
-              Details
-            </h2>
-            <div className="space-y-3">
-              {url ? (
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-accent-text hover:underline text-[14px] break-all"
-                >
-                  <ExternalLink className="w-4 h-4 shrink-0" />
-                  {url}
-                </a>
-              ) : null}
-              <DetailRow icon={Rss} label="Source" value={source} mono />
-              <DetailRow icon={Layers} label="Kind" value={kind} />
-              {stars !== undefined && stars !== null ? (
-                <DetailRow icon={Star} label="Stars" value={stars.toLocaleString()} />
-              ) : null}
-              {language ? <DetailRow icon={Code2} label="Language" value={language} /> : null}
-              {license ? <DetailRow icon={Code} label="License" value={license} /> : null}
-              {author ? <DetailRow icon={Hash} label="Author" value={author} /> : null}
-              {cost ? <DetailRow icon={DollarSign} label="Cost" value={cost} /> : null}
-              {published ? (
-                <DetailRow icon={Calendar} label="Published" value={published} />
-              ) : null}
-              <DetailRow icon={Calendar} label="Discovered" value={formatRelative(obj.createdAt)} />
-              {body.summary && obj.summary !== body.summary ? (
-                <DetailRow icon={Lightbulb} label="Note" value={body.summary} />
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
+        <Panel>
+          <PanelHead>Details</PanelHead>
+          <div className="space-y-3">
+            {url ? (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 break-all text-[14px] font-bold text-accent hover:underline"
+              >
+                <ExternalLink className="h-4 w-4 shrink-0" />
+                {url}
+              </a>
+            ) : null}
+            <DetailRow icon={Rss} label="Source" value={source} mono />
+            <DetailRow icon={Layers} label="Kind" value={kind} />
+            {stars !== undefined && stars !== null ? (
+              <DetailRow icon={Star} label="Stars" value={stars.toLocaleString()} />
+            ) : null}
+            {language ? <DetailRow icon={Code2} label="Language" value={language} /> : null}
+            {license ? <DetailRow icon={Code} label="License" value={license} /> : null}
+            {author ? <DetailRow icon={Hash} label="Author" value={author} /> : null}
+            {cost ? <DetailRow icon={DollarSign} label="Cost" value={cost} /> : null}
+            {published ? (
+              <DetailRow icon={Calendar} label="Published" value={published} />
+            ) : null}
+            <DetailRow icon={Calendar} label="Discovered" value={formatRelative(obj.createdAt)} />
+            {body.summary && obj.summary !== body.summary ? (
+              <DetailRow icon={Lightbulb} label="Note" value={body.summary} />
+            ) : null}
+          </div>
+        </Panel>
 
         {extraEntries.length > 0 ? (
           <RawBodyCard entries={extraEntries} />
         ) : null}
 
         {obj.tags.length > 0 ? (
-          <Card>
-            <CardContent className="p-6">
-              <h2 className="text-[13px] font-semibold text-text-tertiary uppercase tracking-wider mb-3">
-                Tags
-              </h2>
-              <div className="flex flex-wrap gap-1.5">
-                {obj.tags.map((t) => (
-                  <Badge key={t} tone="slate" variant="outline">
-                    {t}
-                  </Badge>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <Panel>
+            <PanelHead>Tags</PanelHead>
+            <div className="flex flex-wrap gap-1.5">
+              {obj.tags.map((t) => (
+                <Chip key={t}>{t}</Chip>
+              ))}
+            </div>
+          </Panel>
         ) : null}
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-5">
         {subId ? <ProvenanceCard subscriptionId={subId} /> : null}
         <MetadataCard obj={obj} />
       </div>
@@ -337,36 +349,27 @@ function OpportunityOverview({ obj }: { obj: import('../api').ObjectDetail }): R
   );
 }
 
-/**
- * Collapsible JSON dump for unknown body fields. Hermes's body
- * schema is open — scouts can attach arbitrary metadata (e.g.
- * `cost_estimate`, `license`, `topics`). Rather than dumping the
- * whole body as JSON on the page, we render the known fields
- * properly and tuck the rest behind a "Show all fields" toggle.
- */
 function RawBodyCard({ entries }: { entries: Array<[string, unknown]> }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   return (
-    <Card>
-      <CardContent className="p-0">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="w-full px-6 py-3 flex items-center justify-between text-[12px] font-medium text-text-secondary hover:bg-surface-1 transition-colors rounded-xl"
-        >
-          <span className="flex items-center gap-2">
-            {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-            {open ? 'Hide' : 'Show'} all fields ({entries.length})
-          </span>
-          <span className="text-text-quaternary">raw JSON</span>
-        </button>
-        {open ? (
-          <pre className="text-[11px] text-text-secondary bg-surface-1 rounded-b-xl p-4 overflow-x-auto font-mono whitespace-pre-wrap break-words border-t border-border-default">
-            {JSON.stringify(Object.fromEntries(entries), null, 2)}
-          </pre>
-        ) : null}
-      </CardContent>
-    </Card>
+    <Panel className="!p-0 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-5 py-3 text-[12px] font-black tracking-[0.1em] text-p5-dark-muted transition hover:bg-black/[0.03]"
+      >
+        <span className="flex items-center gap-2">
+          {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          {open ? 'HIDE' : 'SHOW'} ALL FIELDS ({entries.length})
+        </span>
+        <span className="font-mono text-[10px] text-p5-dark-muted">raw json</span>
+      </button>
+      {open ? (
+        <pre className="whitespace-pre-wrap break-words border-t border-black/10 bg-black/[0.03] p-4 font-mono text-[11px] text-p5-dark-muted overflow-x-auto">
+          {JSON.stringify(Object.fromEntries(entries), null, 2)}
+        </pre>
+      ) : null}
+    </Panel>
   );
 }
 
@@ -384,10 +387,10 @@ function DetailRow({
   if (!value) return null;
   return (
     <div className="flex items-start gap-3">
-      <Icon className="w-4 h-4 text-text-quaternary mt-0.5 shrink-0" />
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-p5-dark-muted" />
       <div className="min-w-0 flex-1">
-        <div className="text-[11px] uppercase tracking-wider text-text-quaternary">{label}</div>
-        <div className={`text-[13px] text-text-primary mt-0.5 break-words ${mono ? 'font-mono' : ''}`}>
+        <div className="p5-kicker text-p5-dark-muted">{label}</div>
+        <div className={cn('mt-0.5 break-words text-[13px] text-p5-dark', mono && 'font-mono')}>
           {value}
         </div>
       </div>
@@ -402,55 +405,46 @@ function ProvenanceCard({ subscriptionId }: { subscriptionId: string }): React.J
   const cat = scout?.categoryId ? cats?.find((c: import('../api').Category) => c.id === scout.categoryId) : null;
 
   return (
-    <Card>
-      <CardContent className="p-5 space-y-3">
-        <h2 className="text-[13px] font-semibold text-text-tertiary uppercase tracking-wider">
-          Found by
-        </h2>
-        {scout ? (
-          <Link
-            to="/scouting"
-            className="block group"
-          >
-            <div className="text-[14px] font-medium text-text-primary group-hover:text-accent-text">
-              {scout.name}
-            </div>
-            <div className="text-[12px] text-text-tertiary mt-0.5">
-              <span className="font-mono">{scout.target}</span>
-              {cat ? <> · <span>{cat.name}</span></> : null}
-            </div>
-          </Link>
-        ) : (
-          <div className="text-[13px] text-text-tertiary">
-            Scout no longer exists (id <span className="font-mono text-[11px]">{subscriptionId.slice(0, 8)}</span>)
+    <Panel>
+      <PanelHead>Found by</PanelHead>
+      {scout ? (
+        <Link to="/scouting" className="block group">
+          <div className="text-[14px] font-black tracking-tight text-p5-dark group-hover:text-accent transition">
+            {scout.name}
           </div>
-        )}
-      </CardContent>
-    </Card>
+          <div className="mt-0.5 text-[12px] text-p5-dark-muted">
+            <span className="font-mono">{scout.target}</span>
+            {cat ? <> · <span>{cat.name}</span></> : null}
+          </div>
+        </Link>
+      ) : (
+        <div className="text-[13px] text-p5-dark-muted">
+          Scout no longer exists (id <span className="font-mono text-[11px]">{subscriptionId.slice(0, 8)}</span>)
+        </div>
+      )}
+    </Panel>
   );
 }
 
 function MetadataCard({ obj }: { obj: import('../api').ObjectDetail }): React.JSX.Element {
   return (
-    <Card>
-      <CardContent className="p-5 space-y-2.5">
-        <h2 className="text-[13px] font-semibold text-text-tertiary uppercase tracking-wider">
-          Metadata
-        </h2>
+    <Panel>
+      <PanelHead>Metadata</PanelHead>
+      <div className="space-y-2.5">
         <Meta label="ID" value={obj.id} mono />
         <Meta label="Created" value={formatRelative(obj.createdAt)} />
         <Meta label="Updated" value={formatRelative(obj.updatedAt)} />
         {obj.archivedAt ? <Meta label="Archived" value={formatRelative(obj.archivedAt)} /> : null}
-      </CardContent>
-    </Card>
+      </div>
+    </Panel>
   );
 }
 
 function Meta({ label, value, mono }: { label: string; value: string; mono?: boolean }): React.JSX.Element {
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wider text-text-quaternary">{label}</div>
-      <div className={`text-[12px] text-text-secondary mt-0.5 ${mono ? 'font-mono break-all' : ''}`}>
+      <div className="p5-kicker text-p5-dark-muted">{label}</div>
+      <div className={cn('mt-0.5 text-[12px] text-p5-dark-muted', mono && 'font-mono break-all')}>
         {value}
       </div>
     </div>
@@ -467,63 +461,55 @@ function GenericOverview({ obj }: { obj: import('../api').ObjectDetail }): React
   );
   const extraEntries = entries.filter(
     ([k]) => !['url', 'source', 'target', 'summary', 'stars', 'language', 'topics',
-              'license', 'author', 'publishedDate', 'cost_estimate'].includes(k),
+      'license', 'author', 'publishedDate', 'cost_estimate'].includes(k),
   );
   const url = (body as { url?: string }).url;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2 space-y-6">
+      <div className="lg:col-span-2 space-y-5">
         {obj.summary ? (
-          <Card>
-            <CardContent className="p-6">
-              <p className="text-[15px] text-text-primary leading-relaxed">{obj.summary}</p>
-            </CardContent>
-          </Card>
+          <Panel>
+            <p className="text-[15px] leading-relaxed text-p5-dark">{obj.summary}</p>
+          </Panel>
         ) : null}
 
         {url ? (
-          <Card>
-            <CardContent className="p-6">
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-accent-text hover:underline text-[14px] break-all"
-              >
-                <ExternalLink className="w-4 h-4 shrink-0" />
-                {url}
-              </a>
-            </CardContent>
-          </Card>
+          <Panel>
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 break-all text-[14px] font-bold text-accent hover:underline"
+            >
+              <ExternalLink className="h-4 w-4 shrink-0" />
+              {url}
+            </a>
+          </Panel>
         ) : null}
 
         {knownEntries.length > 0 ? (
-          <Card>
-            <CardContent className="p-6 space-y-4">
-              <h2 className="text-[13px] font-semibold text-text-tertiary uppercase tracking-wider">
-                Details
-              </h2>
-              <div className="space-y-3">
-                {knownEntries.map(([k, v]) => (
-                  <DetailRow
-                    key={k}
-                    icon={iconForKey(k)}
-                    label={humanizeKey(k)}
-                    value={formatValue(v)}
-                    mono
-                  />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <Panel>
+            <PanelHead>Details</PanelHead>
+            <div className="space-y-3">
+              {knownEntries.map(([k, v]) => (
+                <DetailRow
+                  key={k}
+                  icon={iconForKey(k)}
+                  label={humanizeKey(k)}
+                  value={formatValue(v)}
+                  mono
+                />
+              ))}
+            </div>
+          </Panel>
         ) : null}
 
         {extraEntries.length > 0 ? (
           <RawBodyCard entries={extraEntries} />
         ) : null}
       </div>
-      <div className="space-y-6">
+      <div className="space-y-5">
         <MetadataCard obj={obj} />
       </div>
     </div>
@@ -574,59 +560,58 @@ function TimelineTab({ objectId }: { objectId: string }): React.JSX.Element {
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 
-  if (isLoading) return <Loading text="Loading timeline…" />;
+  if (isLoading) {
+    return <div className="py-16 text-center font-mono text-[11px] tracking-widest text-p5-dark-muted">LOADING TIMELINE…</div>;
+  }
 
   const events = data?.pages.flatMap((p: { events: import('../api').ObjectEvent[] }) => p.events) ?? [];
   if (events.length === 0) {
     return (
-      <Card>
-        <CardContent className="p-10 text-center">
-          <p className="text-text-primary font-medium">No events yet</p>
-          <p className="text-text-tertiary text-[13px] mt-1">
-            Object changes will appear here as they happen.
-          </p>
-        </CardContent>
-      </Card>
+      <Panel className="p-10 text-center">
+        <p className="font-p5-serif text-[22px] text-p5-dark">NO EVENTS YET.</p>
+        <p className="mt-1 text-[13px] text-p5-dark-muted">Object changes will appear here as they happen.</p>
+      </Panel>
     );
   }
 
   return (
     <div className="space-y-3">
       {events.map((e) => {
-        const meta: Record<string, { tone: 'emerald' | 'sky' | 'amber' | 'purple' | 'rose' | 'slate' }> = {
-          created: { tone: 'emerald' },
-          updated: { tone: 'sky' },
-          archived: { tone: 'slate' },
-          priority_changed: { tone: 'amber' },
-          reverted: { tone: 'purple' },
-          feedback_added: { tone: 'rose' },
+        const meta: Record<string, 'emerald' | 'sky' | 'amber' | 'purple' | 'rose' | 'slate'> = {
+          created: 'emerald',
+          updated: 'sky',
+          archived: 'slate',
+          priority_changed: 'amber',
+          reverted: 'purple',
+          feedback_added: 'rose',
         };
-        const m = meta[e.kind] ?? { tone: 'slate' as const };
         return (
-          <Card key={e.id}>
-            <CardContent className="p-4 space-y-2">
-              <div className="flex items-center gap-2 text-[12px]">
-                <Badge tone={m.tone} variant="soft">
-                  {e.kind.replace(/_/g, ' ')}
-                </Badge>
-                <span className="text-text-tertiary">
-                  {new Date(e.createdAt).toLocaleString()}
-                </span>
-                <span className="text-text-quaternary">by {e.actor}</span>
-              </div>
-              {Object.keys(e.payload).length > 0 ? (
-                <pre className="text-[11px] text-text-secondary bg-surface-1 rounded-md p-3 overflow-x-auto font-mono whitespace-pre-wrap break-words">
-                  {JSON.stringify(e.payload, null, 2)}
-                </pre>
-              ) : null}
-            </CardContent>
-          </Card>
+          <div key={e.id} className="border-l-2 border-accent bg-p5-panel px-5 py-4">
+            <div className="flex flex-wrap items-center gap-2 text-[12px]">
+              <Chip tone={meta[e.kind] ?? 'slate'}>{e.kind.replace(/_/g, ' ')}</Chip>
+              <span className="font-mono text-p5-dark-muted">
+                {new Date(e.createdAt).toLocaleString()}
+              </span>
+              <span className="font-mono text-[11px] text-p5-dark-muted">by {e.actor}</span>
+            </div>
+            {Object.keys(e.payload).length > 0 ? (
+              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words bg-black/[0.03] p-3 font-mono text-[11px] text-p5-dark-muted">
+                {JSON.stringify(e.payload, null, 2)}
+              </pre>
+            ) : null}
+          </div>
         );
       })}
       {hasNextPage ? (
-        <Button variant="secondary" onClick={() => fetchNextPage()}>
-          Load more
-        </Button>
+        <div className="text-center pt-2">
+          <button
+            type="button"
+            onClick={() => fetchNextPage()}
+            className="border border-p5-dark-line px-4 py-2 font-mono text-[10px] font-bold tracking-[0.16em] text-p5-dark transition hover:border-p5-dark hover:bg-p5-dark hover:text-p5-cream"
+          >
+            LOAD MORE
+          </button>
+        </div>
       ) : null}
     </div>
   );
@@ -660,54 +645,56 @@ function RevisionsTab({
     },
   });
 
-  if (isLoading) return <Loading text="Loading revisions…" />;
+  if (isLoading) {
+    return <div className="py-16 text-center font-mono text-[11px] tracking-widest text-p5-dark-muted">LOADING REVISIONS…</div>;
+  }
 
   const revisions = data?.pages.flatMap((p: { revisions: import('../api').ObjectRevision[] }) => p.revisions) ?? [];
   if (revisions.length === 0) {
     return (
-      <Card>
-        <CardContent className="p-10 text-center">
-          <p className="text-text-primary font-medium">No revisions yet</p>
-        </CardContent>
-      </Card>
+      <Panel className="p-10 text-center">
+        <p className="font-p5-serif text-[22px] text-p5-dark">NO REVISIONS YET.</p>
+      </Panel>
     );
   }
 
   return (
     <div className="space-y-3">
       {revisions.map((r) => (
-        <Card key={r.id}>
-          <CardContent className="p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-[12px]">
-                <Badge tone="sky" variant="soft">
-                  rev {r.revision}
-                </Badge>
-                <span className="text-text-tertiary">{new Date(r.createdAt).toLocaleString()}</span>
-                <span className="text-text-quaternary">by {r.createdBy}</span>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  if (window.confirm(`Revert to revision ${r.revision}?`)) revert.mutate(r.revision);
-                }}
-              >
-                Revert
-              </Button>
+        <div key={r.id} className="border-2 border-black/15 bg-p5-panel p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-[12px]">
+              <Chip tone="sky">rev {r.revision}</Chip>
+              <span className="font-mono text-p5-dark-muted">{new Date(r.createdAt).toLocaleString()}</span>
+              <span className="font-mono text-[11px] text-p5-dark-muted">by {r.createdBy}</span>
             </div>
-            {r.reason ? <div className="text-[13px] text-text-secondary">{r.reason}</div> : null}
-            <div className="text-[14px] font-medium text-text-primary">{r.title}</div>
-            {r.summary ? (
-              <p className="text-[12px] text-text-tertiary">{r.summary}</p>
-            ) : null}
-          </CardContent>
-        </Card>
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Revert to revision ${r.revision}?`)) revert.mutate(r.revision);
+              }}
+              className="min-h-[44px] min-w-[44px] px-2 text-[10px] font-black tracking-[0.12em] text-p5-dark-muted transition hover:text-accent"
+            >
+              REVERT
+            </button>
+          </div>
+          {r.reason ? <div className="text-[13px] text-p5-dark-muted">{r.reason}</div> : null}
+          <div className="text-[14px] font-black tracking-tight text-p5-dark">{r.title}</div>
+          {r.summary ? (
+            <p className="text-[12px] text-p5-dark-muted">{r.summary}</p>
+          ) : null}
+        </div>
       ))}
       {hasNextPage ? (
-        <Button variant="secondary" onClick={() => fetchNextPage()}>
-          Load more
-        </Button>
+        <div className="text-center pt-2">
+          <button
+            type="button"
+            onClick={() => fetchNextPage()}
+            className="border border-p5-dark-line px-4 py-2 font-mono text-[10px] font-bold tracking-[0.16em] text-p5-dark transition hover:border-p5-dark hover:bg-p5-dark hover:text-p5-cream"
+          >
+            LOAD MORE
+          </button>
+        </div>
       ) : null}
     </div>
   );
@@ -724,37 +711,31 @@ function RelatedTab({
 }): React.JSX.Element {
   if (items.length === 0) {
     return (
-      <Card>
-        <CardContent className="p-10 text-center">
-          <p className="text-text-primary font-medium">No related objects</p>
-          <p className="text-text-tertiary text-[13px] mt-1">
-            Objects get linked automatically when they share a target, source, or are linked explicitly.
-          </p>
-        </CardContent>
-      </Card>
+      <Panel className="p-10 text-center">
+        <p className="font-p5-serif text-[22px] text-p5-dark">NO RELATED OBJECTS.</p>
+        <p className="mt-1 text-[13px] text-p5-dark-muted">
+          Objects get linked automatically when they share a target, source, or are linked explicitly.
+        </p>
+      </Panel>
     );
   }
   return (
     <div className="space-y-2">
       {items.map((r) => (
-        <Card key={r.id}>
-          <CardContent className="p-4 flex items-center justify-between">
-            <Link to={`/objects/${r.id}`} className="min-w-0 flex-1 group">
-              <div className="flex items-center gap-2">
-                <Badge tone="slate" variant="outline">
-                  {r.type}
-                </Badge>
-                <span className="font-medium text-text-primary group-hover:text-accent-text">
-                  {r.title}
-                </span>
-              </div>
-              {r.reason ? <div className="text-[12px] text-text-tertiary mt-1">{r.reason}</div> : null}
-            </Link>
-            <div className="text-[11px] text-text-quaternary ml-4 shrink-0">
-              conf {r.confidence.toFixed(2)}
+        <div key={r.id} className="flex items-center justify-between border-2 border-black/15 bg-p5-panel p-4">
+          <Link to={`/objects/${r.id}`} className="group min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Chip>{r.type}</Chip>
+              <span className="font-black tracking-tight text-p5-dark group-hover:text-accent transition">
+                {r.title}
+              </span>
             </div>
-          </CardContent>
-        </Card>
+            {r.reason ? <div className="mt-1 text-[12px] text-p5-dark-muted">{r.reason}</div> : null}
+          </Link>
+          <div className="ml-4 shrink-0 font-mono text-[11px] text-p5-dark-muted">
+            conf {r.confidence.toFixed(2)}
+          </div>
+        </div>
       ))}
     </div>
   );

@@ -92,33 +92,44 @@ describe('DashboardPage (collaborator home)', () => {
     expect(await screen.findByText('HERMES IS PAUSED')).toBeInTheDocument();
   });
 
-  it('renders the Ask Hermes bar with suggestion chips', async () => {
+  it('renders the Quick Add Task field with the delegate option', async () => {
     render(renderPage());
-    expect(await screen.findByPlaceholderText(/Research, summarize, plan/)).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /What should I focus on today/ })).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText(/What needs to get done/)).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: /Delegate to Hermes/i })).toBeInTheDocument();
   });
 
-  it('adds a task from the Tasks card', async () => {
+  it('captures a task via Quick Add', async () => {
     const user = userEvent.setup();
     const createTask = vi.spyOn(api, 'createTask').mockResolvedValue({
       task: { id: 't-new', title: 'Fix login', notes: null, category: 'work', status: 'todo', priority: 0, dueAt: null, completedAt: null, createdBy: 'user', batchId: null, sentToHermesAt: null, objectId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), archivedAt: null },
     } as never);
     render(renderPage());
-    await user.click(await screen.findByRole('button', { name: 'Add task for today' }));
-    await user.type(await screen.findByPlaceholderText('Add a task for today…'), 'Fix login');
-    await user.click(screen.getByRole('button', { name: 'ADD' }));
+    await user.type(await screen.findByPlaceholderText(/What needs to get done/), 'Fix login');
+    await user.click(screen.getByRole('button', { name: /CAPTURE/ }));
     await waitFor(() => expect(createTask).toHaveBeenCalledWith({ title: 'Fix login', category: 'work' }));
   });
 
-  it('Ask Hermes sends and navigates to the chat', async () => {
-    vi.spyOn(api, 'hermesCreateSession').mockResolvedValue({ object: 'hermes.session', session: { id: 'web_123' } } as never);
-    vi.spyOn(api, 'hermesChat').mockResolvedValue({ object: 'hermes.session.chat.completion', session_id: 'web_123', message: { role: 'assistant', content: 'ok' } } as never);
+  it('delegates a task to Hermes when the option is enabled', async () => {
+    const user = userEvent.setup();
+    const createTask = vi.spyOn(api, 'createTask').mockResolvedValue({
+      task: { id: 't-hermes', title: 'Research competitors', notes: null, category: 'work', status: 'todo', priority: 0, dueAt: null, completedAt: null, createdBy: 'user', batchId: null, sentToHermesAt: null, objectId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), archivedAt: null },
+    } as never);
+    const delegateTask = vi.spyOn(api, 'delegateTask').mockResolvedValue({ sessionId: 'sess-1', delegated: true } as never);
+    render(renderPage());
+    await user.type(await screen.findByPlaceholderText(/What needs to get done/), 'Research competitors');
+    await user.click(screen.getByRole('switch', { name: /Delegate to Hermes/i }));
+    await user.click(screen.getByRole('button', { name: /CAPTURE/ }));
+    await waitFor(() => {
+      expect(createTask).toHaveBeenCalledWith({ title: 'Research competitors', category: 'work' });
+      expect(delegateTask).toHaveBeenCalledWith('t-hermes', { context: expect.any(String) });
+    });
+  });
+
+  it('CHAT WITH HERMES opens the chat page', async () => {
     const user = userEvent.setup();
     render(renderPage());
-    await screen.findByPlaceholderText(/Research, summarize, plan/);
-    await user.type(screen.getByPlaceholderText(/Research, summarize, plan/), 'What should I focus on?');
-    await user.click(screen.getByRole('button', { name: /SEND/ }));
-    expect(await screen.findByText('chat session')).toBeInTheDocument();
+    await user.click(await screen.findByRole('link', { name: /CHAT WITH HERMES/i }));
+    expect(await screen.findByText('chat page')).toBeInTheDocument();
   });
 
   it('shows the since-you-were-away when new events exist', async () => {

@@ -21,7 +21,7 @@ const MCP_TOKEN = process.env.MCP_TOKEN ?? '';
 async function main(): Promise<void> {
   if (!MCP_TOKEN) {
     console.error('ERROR: set MCP_TOKEN env var to your mcp token');
-    console.error('  Example: MCP_TOKEN=REDACTED_MCP_TOKEN tsx scripts/test-refresh-auth.ts');
+    console.error('  Example: MCP_TOKEN=<your-mcp-token> tsx scripts/test-refresh-auth.ts');
     process.exit(1);
   }
 

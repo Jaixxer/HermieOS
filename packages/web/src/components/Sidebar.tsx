@@ -3,13 +3,9 @@ import { NavLink, Link, useLocation } from 'react-router-dom';
 import {
   Home,
   Target,
-  FolderKanban,
   Lightbulb,
-  Compass,
   Radar,
   CalendarDays,
-  BookOpen,
-  BarChart3,
   Settings,
   LogOut,
   MessageSquare,
@@ -27,14 +23,10 @@ import { cn } from '../lib/utils';
 const NAV_ITEMS = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/mission', label: 'Mission', icon: Target },
-  { to: '/projects', label: 'Projects', icon: FolderKanban },
   { to: '/knowledge', label: 'Knowledge', icon: Lightbulb },
-  { to: '/opportunities', label: 'Opportunities', icon: Compass },
   { to: '/scouting', label: 'Scouting', icon: Radar },
   { to: '/chat', label: 'Chat', icon: MessageSquare },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },
-  { to: '/resources', label: 'Resources', icon: BookOpen },
-  { to: '/analytics', label: 'Analytics', icon: BarChart3 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ] as const;
 

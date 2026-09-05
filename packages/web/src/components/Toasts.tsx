@@ -45,7 +45,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }): Reac
     <ToastContext.Provider value={{ push }}>
       {children}
       {createPortal(
-        <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-[320px] max-w-[calc(100vw-2rem)]">
+        <div className="fixed bottom-24 sm:bottom-4 left-4 right-4 sm:left-auto sm:right-4 z-[100] flex flex-col gap-2 sm:w-[320px] sm:max-w-[calc(100vw-2rem)]">
           {toasts.map((t) => (
             <div
               key={t.id}

@@ -15,12 +15,15 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { api, getApiBase, type CalendarEvent } from '../api';
-import { Sidebar } from '../components/Sidebar';
-import { Button } from '../components/ui/button';
-import { Card, CardContent } from '../components/ui/card';
-import { Input } from '../components/ui/input';
-import { Loading } from '../components/Loading';
 import { cn } from '../lib/utils';
+import { Sheet } from '../components/ui/sheet';
+import { mediaMatches } from '../mobile';
+
+/**
+ * Calendar — the schedule desk. Editorial grid, red today-marker,
+ * hard-edged event blocks, dark event modal. Same frame as the rest
+ * of HermieOS: cream workspace + nav rail.
+ */
 
 type View = 'month' | 'week' | 'day';
 
@@ -54,10 +57,18 @@ function isSameDay(a: Date, b: Date): boolean {
 function monthLabel(d: Date): string {
   return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 }
+function timeOf(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+const inputCls =
+  'w-full border border-p5-dark-line bg-white px-3 py-2 h-12 sm:h-auto text-[16px] sm:text-[13px] text-p5-dark outline-none placeholder:text-p5-dark-muted focus:border-accent transition';
 
 export function CalendarPage(): React.JSX.Element {
   const qc = useQueryClient();
-  const [view, setView] = React.useState<View>('month');
+  const [view, setView] = React.useState<View>(() =>
+    mediaMatches('(max-width: 639px)') ? 'day' : 'month',
+  );
   const [cursor, setCursor] = React.useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = React.useState<Date>(new Date());
   const [showEventModal, setShowEventModal] = React.useState(false);
@@ -123,39 +134,58 @@ export function CalendarPage(): React.JSX.Element {
   }
 
   return (
-    <div className="h-screen overflow-hidden flex bg-page text-text-primary">
-      <Sidebar activePath="/calendar" className="hidden lg:flex" />
+    <div className="h-screen overflow-hidden flex bg-p5-cream text-p5-dark flex-1 min-w-0">
       <main className="flex-1 min-w-0 min-h-0 flex flex-col">
         {/* Header */}
-        <div className="h-[52px] shrink-0 px-6 border-b border-border-default flex items-center gap-3 bg-surface-0/95 backdrop-blur">
-          <CalendarIcon className="w-4 h-4 text-accent-text" />
-          <h1 className="text-[14px] font-semibold">Calendar</h1>
+        <div className="min-h-[52px] shrink-0 px-4 sm:px-6 py-2 sm:py-0 border-b border-black/10 flex flex-wrap items-center gap-x-3 gap-y-2 bg-p5-cream">
+          <CalendarIcon className="w-4 h-4 text-accent" />
+          <span className="text-[11px] font-black tracking-[0.16em] uppercase">Schedule</span>
           <div className="ml-auto flex items-center gap-2">
             <GoogleConnectButton status={status.data} onSync={syncNow} />
-            <div className="w-px h-5 bg-border-default mx-1" />
-            <Button size="sm" variant="ghost" onClick={goToday}>Today</Button>
-            <div className="flex items-center">
-              <Button size="icon" variant="ghost" onClick={() => navigate(-1)} title="Previous">
+            <div className="mx-1 h-5 w-px bg-black/10" />
+            <button
+              type="button"
+              onClick={goToday}
+              className="border border-p5-dark-line px-2.5 py-1.5 min-h-[44px] sm:min-h-0 inline-flex items-center text-[10px] font-black tracking-[0.12em] text-p5-dark transition hover:border-p5-dark hover:bg-p5-dark hover:text-p5-cream"
+            >
+              TODAY
+            </button>
+            <div className="flex items-center border border-p5-dark-line">
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                title="Previous"
+                className="flex h-11 w-11 sm:h-7 sm:w-7 items-center justify-center text-p5-dark-muted transition hover:text-p5-dark"
+              >
                 <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button size="icon" variant="ghost" onClick={() => navigate(1)} title="Next">
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(1)}
+                title="Next"
+                className="flex h-11 w-11 sm:h-7 sm:w-7 items-center justify-center border-l border-p5-dark-line text-p5-dark-muted transition hover:text-p5-dark"
+              >
                 <ChevronRight className="w-4 h-4" />
-              </Button>
+              </button>
             </div>
-            <span className="text-[13px] font-medium min-w-[140px] text-center">
-              {view === 'day' ? cursor.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : monthLabel(cursor)}
+            <span className="min-w-0 text-center font-mono text-[12px] sm:text-[13px] font-bold text-p5-dark">
+              {view === 'day' ? cursor.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : monthLabel(cursor).toUpperCase()}
             </span>
-            <div className="w-px h-5 bg-border-default mx-1" />
+            <div className="mx-1 h-5 w-px bg-black/10" />
             <ViewSwitcher view={view} onChange={setView} />
-            <Button size="sm" onClick={() => { setEditingEvent(null); setShowEventModal(true); }}>
-              <Plus className="w-3.5 h-3.5" /> New event
-            </Button>
+            <button
+              type="button"
+              onClick={() => { setEditingEvent(null); setShowEventModal(true); }}
+              className="inline-flex items-center justify-center gap-1.5 bg-accent px-3.5 py-2 min-h-[44px] sm:min-h-0 basis-full sm:basis-auto text-[10px] font-black tracking-[0.12em] text-white transition hover:bg-accent-hover"
+            >
+              <Plus className="w-3.5 h-3.5" /> NEW EVENT
+            </button>
           </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto p-6">
           {status.isLoading ? (
-            <Loading text="Loading calendar…" />
+            <div className="py-20 text-center font-mono text-[12px] tracking-widest text-p5-dark-muted">LOADING THE SCHEDULE…</div>
           ) : view === 'month' ? (
             <MonthGrid
               cursor={cursor}
@@ -215,15 +245,15 @@ function ViewSwitcher({ view, onChange }: { view: View; onChange: (v: View) => v
     { value: 'day', label: 'Day' },
   ];
   return (
-    <div className="flex items-center rounded-md border border-border-default p-0.5">
+    <div className="flex items-center border border-p5-dark-line">
       {tabs.map((t) => (
         <button
           key={t.value}
           type="button"
           onClick={() => onChange(t.value)}
           className={cn(
-            'text-[12px] px-2 py-0.5 rounded transition',
-            view === t.value ? 'bg-accent text-accent-fg font-medium' : 'text-text-tertiary hover:bg-surface-1',
+            'px-2.5 py-1.5 min-h-[44px] sm:min-h-0 inline-flex items-center text-[10px] font-black tracking-[0.1em] uppercase transition',
+            view === t.value ? 'bg-accent text-white' : 'text-p5-dark-muted hover:bg-black/[0.03] hover:text-p5-dark',
           )}
         >
           {t.label}
@@ -260,41 +290,40 @@ function GoogleConnectButton({
     return (
       <div className="flex items-center gap-2">
         {!setupOpen ? (
-          <Button
-            size="sm"
-            variant="outline"
+          <button
+            type="button"
             onClick={() => setSetupOpen(true)}
-            className="gap-1.5"
+            className="inline-flex items-center gap-1.5 border border-p5-dark-line px-3 py-1.5 min-h-[44px] sm:min-h-0 text-[10px] font-black tracking-[0.12em] text-p5-dark transition hover:border-p5-dark hover:bg-p5-dark hover:text-p5-cream"
           >
             <CalendarIcon className="w-3.5 h-3.5" />
-            Connect Google Calendar
-          </Button>
+            CONNECT GOOGLE CALENDAR
+          </button>
         ) : (
-          <div className="flex items-center gap-2">
-            <Input
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+            <input
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
               placeholder="Client ID"
-              className="w-40 h-8"
+              className="h-12 sm:h-8 w-full sm:w-40 border border-p5-dark-line bg-white px-2 text-[16px] sm:text-[12px] text-p5-dark outline-none placeholder:text-p5-dark-muted focus:border-accent"
               disabled={setupSaving}
             />
-            <Input
+            <input
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
               placeholder="Client Secret"
-              className="w-40 h-8"
+              className="h-12 sm:h-8 w-full sm:w-40 border border-p5-dark-line bg-white px-2 text-[16px] sm:text-[12px] text-p5-dark outline-none placeholder:text-p5-dark-muted focus:border-accent"
               disabled={setupSaving}
             />
-            <Button
-              size="sm"
-              variant="ghost"
+            <button
+              type="button"
               onClick={() => setSetupOpen(false)}
               disabled={setupSaving}
+              className="px-2.5 py-1.5 text-[10px] font-black tracking-[0.12em] text-p5-dark-muted transition hover:text-p5-dark"
             >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
+              CANCEL
+            </button>
+            <button
+              type="button"
               disabled={setupSaving || !clientId.trim() || !clientSecret.trim()}
               onClick={async () => {
                 setSetupSaving(true);
@@ -312,10 +341,11 @@ function GoogleConnectButton({
                   setSetupSaving(false);
                 }
               }}
+              className="inline-flex items-center gap-1 bg-accent px-2.5 py-1.5 text-[10px] font-black tracking-[0.12em] text-white transition hover:bg-accent-hover disabled:opacity-40"
             >
               <Save className="w-3 h-3" />
-              Save
-            </Button>
+              SAVE
+            </button>
           </div>
         )}
         {setupError ? (
@@ -325,7 +355,7 @@ function GoogleConnectButton({
           href="https://console.cloud.google.com/apis/library"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[11px] text-accent-text hover:underline"
+          className="text-[11px] font-bold text-accent hover:underline"
         >
           Enable Calendar API <ExternalLink className="w-3 h-3 inline" />
         </a>
@@ -334,9 +364,8 @@ function GoogleConnectButton({
   }
   if (!status.connected) {
     return (
-      <Button
-        size="sm"
-        variant="outline"
+      <button
+        type="button"
         disabled={busy}
         onClick={async () => {
           setBusy(true);
@@ -347,36 +376,70 @@ function GoogleConnectButton({
             setBusy(false);
           }
         }}
+        className="inline-flex items-center gap-1.5 border border-p5-dark-line px-3 py-1.5 text-[10px] font-black tracking-[0.12em] text-p5-dark transition hover:border-p5-dark hover:bg-p5-dark hover:text-p5-cream"
       >
         {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarIcon className="w-3.5 h-3.5" />}
-        Connect Google Calendar
-      </Button>
+        CONNECT GOOGLE CALENDAR
+      </button>
     );
   }
   return (
     <div className="flex items-center gap-1">
-      <span className="text-[11px] text-text-quaternary">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1" />
+      <span className="font-mono text-[11px] text-p5-dark-muted">
+        <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
         {status.email ?? 'Connected'}
       </span>
-      <Button size="icon" variant="ghost" onClick={onSync} title="Sync now">
+      <button
+        type="button"
+        onClick={onSync}
+        title="Sync now"
+        className="flex h-7 w-7 items-center justify-center text-p5-dark-muted transition hover:text-p5-dark"
+      >
         <RefreshCw className="w-3.5 h-3.5" />
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
+      </button>
+      <button
+        type="button"
         onClick={async () => {
           if (!confirm('Disconnect Google Calendar? Future runs won\'t see your events.')) return;
           await api.calendarDisconnect();
           await qc.invalidateQueries({ queryKey: ['calendar'] });
         }}
         title="Disconnect"
+        className="border border-p5-dark-line px-2.5 py-1 text-[10px] font-black tracking-[0.1em] text-p5-dark-muted transition hover:border-status-failed hover:text-status-failed"
       >
-        Disconnect
-      </Button>
+        DISCONNECT
+      </button>
     </div>
   );
 }
+
+// ============================================================================
+// Event chip (shared by month + week views)
+// ============================================================================
+
+function EventChip({ ev, onClick }: { ev: CalendarEvent; onClick: () => void }): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="w-full cursor-pointer border-l-2 border-accent bg-accent/10 px-1.5 py-0.5 text-left transition hover:bg-accent/25"
+    >
+      <div className="truncate text-[10px] font-bold text-p5-dark">{ev.title}</div>
+      {!ev.allDay ? (
+        <div className="font-mono text-[9px] text-p5-dark-muted">
+          {timeOf(ev.startsAt)}–{timeOf(ev.endsAt)}
+        </div>
+      ) : null}
+    </button>
+  );
+}
+
+// ============================================================================
+// Month grid
+// ============================================================================
 
 function MonthGrid({
   cursor,
@@ -398,71 +461,63 @@ function MonthGrid({
     days.push(new Date(d));
     d.setDate(d.getDate() + 1);
   }
+  const today = new Date();
   return (
-    <Card>
-      <CardContent className="p-2">
-        <div className="grid grid-cols-7 mb-1">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-            <div key={d} className="text-[11px] text-text-quaternary text-center py-1">
-              {d}
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-px bg-border-default rounded-md overflow-hidden">
-          {days.map((day) => {
-            const inMonth = day.getMonth() === cursor.getMonth();
-            const isToday = isSameDay(day, new Date());
-            const isSelected = isSameDay(day, selected);
-            const dayEvents = eventsOnDay(day);
-            return (
-              <button
-                key={day.toISOString()}
-                type="button"
-                onClick={() => onSelect(day)}
+    <div className="overflow-hidden border-2 border-black/15 bg-p5-panel p5-anim-slide">
+      <div className="grid grid-cols-7 border-b-2 border-black/10">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dow) => (
+          <div key={dow} className="p5-kicker py-2 text-center text-p5-dark-muted">{dow}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7">
+        {days.map((day) => {
+          const inMonth = day.getMonth() === cursor.getMonth();
+          const isToday = isSameDay(day, today);
+          const isSelected = isSameDay(day, selected);
+          const dayEvents = eventsOnDay(day);
+          return (
+            <button
+              key={day.toISOString()}
+              type="button"
+              onClick={() => onSelect(day)}
+              className={cn(
+                'flex h-[104px] flex-col gap-0.5 border-b border-r border-black/[0.06] p-1.5 text-left transition',
+                'hover:bg-black/[0.03]',
+                !inMonth && 'opacity-40',
+                isSelected && 'bg-accent/5',
+              )}
+            >
+              <span
                 className={cn(
-                  'bg-surface-0 hover:bg-surface-1 p-1.5 text-left h-[88px] flex flex-col gap-0.5 transition',
-                  !inMonth && 'opacity-40',
+                  'flex h-5 w-5 items-center justify-center text-[11px] font-bold',
+                  isToday && 'bg-accent text-white',
+                  isSelected && !isToday && 'border border-accent text-accent',
+                  !isToday && !isSelected && 'text-p5-dark-muted',
                 )}
               >
-                <div className="flex items-center gap-1">
-                  <span
-                    className={cn(
-                      'text-[11px] w-5 h-5 rounded-full flex items-center justify-center',
-                      isToday && 'bg-accent text-accent-fg font-semibold',
-                      !isToday && isSelected && 'ring-1 ring-accent',
-                      !isToday && !isSelected && 'text-text-secondary',
-                    )}
-                  >
-                    {day.getDate()}
-                  </span>
-                </div>
-                <div className="flex-1 min-h-0 space-y-0.5 overflow-hidden">
-                  {dayEvents.slice(0, 3).map((ev) => (
-                    <div
-                      key={ev.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onEventClick(ev);
-                      }}
-                      className="text-[10px] px-1 py-0.5 rounded truncate bg-accent/15 text-accent-text hover:bg-accent/25 cursor-pointer"
-                    >
-                      {ev.title}
-                    </div>
-                  ))}
-                  {dayEvents.length > 3 ? (
-                    <div className="text-[10px] text-text-quaternary px-1">
-                      +{dayEvents.length - 3} more
-                    </div>
-                  ) : null}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
+                {day.getDate()}
+              </span>
+              <div className="mt-0.5 min-h-0 flex-1 space-y-0.5 overflow-hidden">
+                {dayEvents.slice(0, 3).map((ev) => (
+                  <EventChip key={ev.id} ev={ev} onClick={() => onEventClick(ev)} />
+                ))}
+                {dayEvents.length > 3 ? (
+                  <div className="px-1 font-mono text-[9px] text-p5-dark-muted">
+                    +{dayEvents.length - 3} MORE
+                  </div>
+                ) : null}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
+
+// ============================================================================
+// Week grid
+// ============================================================================
 
 function WeekGrid({
   cursor,
@@ -480,50 +535,43 @@ function WeekGrid({
     d.setDate(d.getDate() + i);
     days.push(d);
   }
+  const today = new Date();
   return (
-    <div className="grid grid-cols-7 gap-2">
+    <div className="grid grid-cols-7 gap-3">
       {days.map((day) => {
         const dayEvents = eventsOnDay(day).sort(
           (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
         );
+        const isToday = isSameDay(day, today);
         return (
-          <Card key={day.toISOString()} className="min-h-[300px]">
-            <CardContent className="p-3">
-              <div className="text-[12px] font-medium mb-2 flex items-baseline gap-1">
+          <div key={day.toISOString()} className="flex min-h-[320px] flex-col border-2 border-black/15 bg-p5-panel">
+            <div className={cn('flex items-baseline gap-1.5 border-b-2 border-black/10 px-3 py-2', isToday && 'bg-accent text-white')}>
+              <span className="text-[12px] font-black tracking-[0.1em] uppercase">
                 {day.toLocaleDateString(undefined, { weekday: 'short' })}
-                <span className="text-text-quaternary">{day.getDate()}</span>
-              </div>
-              <div className="space-y-1">
-                {dayEvents.length === 0 ? (
-                  <div className="text-[11px] text-text-quaternary italic">No events</div>
-                ) : (
-                  dayEvents.map((ev) => (
-                    <div
-                      key={ev.id}
-                      onClick={() => onEventClick(ev)}
-                      className="text-[11px] px-2 py-1.5 rounded bg-accent/15 text-accent-text hover:bg-accent/25 cursor-pointer"
-                    >
-                      <div className="font-medium truncate">{ev.title}</div>
-                      {!ev.allDay ? (
-                        <div className="text-[10px] opacity-70">
-                          {new Date(ev.startsAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                          {' – '}
-                          {new Date(ev.endsAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      ) : (
-                        <div className="text-[10px] opacity-70">All day</div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
+              </span>
+              <span className={cn('font-mono text-[13px] font-bold', isToday ? 'text-white/80' : 'text-p5-dark-muted')}>
+                {day.getDate()}
+              </span>
+            </div>
+            <div className="flex-1 space-y-1 p-2">
+              {dayEvents.length === 0 ? (
+                <div className="px-1 py-2 text-center font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted">CLEAR</div>
+              ) : (
+                dayEvents.map((ev) => (
+                  <EventChip key={ev.id} ev={ev} onClick={() => onEventClick(ev)} />
+                ))
+              )}
+            </div>
+          </div>
         );
       })}
     </div>
   );
 }
+
+// ============================================================================
+// Day list
+// ============================================================================
 
 function DayList({
   cursor,
@@ -538,55 +586,64 @@ function DayList({
     (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
   );
   return (
-    <Card>
-      <CardContent className="p-4">
-        <h2 className="text-[14px] font-medium mb-3">
-          {cursor.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-        </h2>
+    <div className="overflow-hidden border-2 border-black/15 bg-p5-panel">
+      <div className="border-b-2 border-black/10 px-5 py-4">
+        <div className="p5-kicker text-p5-dark-muted">THE DAY</div>
+        <div className="mt-1 font-p5-serif text-[30px] leading-none text-p5-dark">
+          {cursor.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase()}
+        </div>
+      </div>
+      <div className="p-5">
         {dayEvents.length === 0 ? (
-          <div className="text-[12px] text-text-quaternary py-8 text-center">
-            No events. Click "New event" to add one.
+          <div className="py-10 text-center font-mono text-[12px] tracking-[0.14em] text-p5-dark-muted">
+            NO EVENTS — CLICK NEW EVENT TO ADD ONE.
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {dayEvents.map((ev) => (
               <div
                 key={ev.id}
                 onClick={() => onEventClick(ev)}
-                className="border border-border-default rounded-lg p-3 hover:border-accent cursor-pointer"
+                className="flex cursor-pointer items-start gap-4 border border-black/15 p-4 transition hover:border-accent"
               >
-                <div className="flex items-start gap-3">
-                  <div className="text-[11px] text-text-tertiary w-20 shrink-0 pt-0.5">
-                    {ev.allDay ? 'All day' : (
-                      <>
-                        {new Date(ev.startsAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                        <div className="text-text-quaternary">– {new Date(ev.endsAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</div>
-                      </>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[14px] font-medium">{ev.title}</div>
-                    {ev.description ? <div className="text-[12px] text-text-tertiary mt-1 line-clamp-2">{ev.description}</div> : null}
-                    {ev.location ? (
-                      <div className="flex items-center gap-1 text-[11px] text-text-tertiary mt-1">
-                        <MapPin className="w-3 h-3" /> {ev.location}
-                      </div>
-                    ) : null}
-                    {ev.attendees.length > 0 ? (
-                      <div className="flex items-center gap-1 text-[11px] text-text-tertiary mt-1">
-                        <Users className="w-3 h-3" /> {ev.attendees.length} attendee{ev.attendees.length !== 1 ? 's' : ''}
-                      </div>
-                    ) : null}
-                  </div>
+                <div className="w-20 shrink-0 border-r border-black/10 pr-3 text-right font-mono text-[12px] leading-snug text-p5-dark-muted">
+                  {ev.allDay ? (
+                    'ALL DAY'
+                  ) : (
+                    <>
+                      {timeOf(ev.startsAt)}
+                      <div className="text-p5-dark-muted/70">– {timeOf(ev.endsAt)}</div>
+                    </>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[16px] font-black tracking-tight text-p5-dark">{ev.title}</div>
+                  {ev.description ? (
+                    <div className="mt-1 line-clamp-2 text-[12px] text-p5-dark-muted">{ev.description}</div>
+                  ) : null}
+                  {ev.location ? (
+                    <div className="mt-1.5 flex items-center gap-1 font-mono text-[11px] text-p5-dark-muted">
+                      <MapPin className="h-3 w-3" /> {ev.location}
+                    </div>
+                  ) : null}
+                  {ev.attendees.length > 0 ? (
+                    <div className="mt-1 flex items-center gap-1 font-mono text-[11px] text-p5-dark-muted">
+                      <Users className="h-3 w-3" /> {ev.attendees.length} attendee{ev.attendees.length !== 1 ? 's' : ''}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
+
+// ============================================================================
+// Event modal
+// ============================================================================
 
 function EventModal({
   event,
@@ -671,90 +728,119 @@ function EventModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <Card className="w-full max-w-lg mx-4">
-        <CardContent className="p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[15px] font-semibold">{event ? 'Edit event' : 'New event'}</h3>
-            <Button size="icon" variant="ghost" onClick={onClose}>
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
+    <Sheet
+      open
+      onClose={onClose}
+      label={event ? 'Edit event' : 'New event'}
+      className="bg-[#1b1b1b] text-p5-text sm:max-w-lg border-white/15 border"
+      footerClassName="border-white/15 bg-[#1b1b1b]"
+      footer={
+        <div className="flex items-center gap-2">
+          {event ? (
+            <button
+              type="button"
+              onClick={remove}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 border border-white/25 px-3.5 py-2 min-h-[48px] sm:min-h-0 text-[11px] font-black tracking-[0.12em] text-status-failed transition hover:bg-status-failed/10 disabled:opacity-40"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> DELETE
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="px-3.5 py-2 min-h-[48px] sm:min-h-0 text-[11px] font-black tracking-[0.12em] text-p5-muted transition hover:text-p5-text"
+          >
+            CANCEL
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={busy}
+            className="ml-auto inline-flex items-center gap-1.5 bg-accent px-4 py-2 min-h-[48px] sm:min-h-0 text-[11px] font-black tracking-[0.12em] text-white transition hover:bg-accent-hover disabled:opacity-40"
+          >
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+            SAVE
+          </button>
+        </div>
+      }
+    >
+      <div className="p-5 sm:p-6">
+        <div className="flex items-center justify-between">
+          <h3 className="font-p5-serif text-[22px] sm:text-[24px] leading-none text-p5-text">
+            {event ? 'EDIT EVENT' : 'NEW EVENT'}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-11 w-11 sm:h-8 sm:w-8 items-center justify-center text-p5-muted transition hover:text-p5-text"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="mt-5 space-y-3">
           <div>
-            <label className="text-[11px] text-text-quaternary">Title</label>
+            <label className="p5-kicker text-p5-muted">Title</label>
             <input
-              autoFocus
+              autoFocus={typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full mt-1 h-9 px-3 rounded-md border border-border-default bg-surface-0 text-[13px]"
+              className={cn(inputCls, 'mt-1.5 bg-p5-ink-3 border-white/15 text-p5-text placeholder:text-p5-muted')}
             />
           </div>
-          <div className="flex items-center gap-2 text-[12px] text-text-secondary">
+          <div className="flex items-center gap-2 text-[12px] text-p5-muted">
             <input
               id="all-day"
               type="checkbox"
               checked={allDay}
               onChange={(e) => setAllDay(e.target.checked)}
+              className="h-6 w-6 sm:h-4 sm:w-4 accent-[#D5001C]"
             />
             <label htmlFor="all-day">All day</label>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-[11px] text-text-quaternary">Starts</label>
+              <label className="p5-kicker text-p5-muted">Starts</label>
               <input
                 type={allDay ? 'date' : 'datetime-local'}
                 value={allDay ? startsAt.slice(0, 10) : startsAt}
                 onChange={(e) => setStartsAt(allDay ? `${e.target.value}T00:00` : e.target.value)}
-                className="w-full mt-1 h-9 px-2 rounded-md border border-border-default bg-surface-0 text-[12px]"
+                className={cn(inputCls, 'mt-1.5 bg-p5-ink-3 border-white/15 text-p5-text')}
               />
             </div>
             <div>
-              <label className="text-[11px] text-text-quaternary">Ends</label>
+              <label className="p5-kicker text-p5-muted">Ends</label>
               <input
                 type={allDay ? 'date' : 'datetime-local'}
                 value={allDay ? endsAt.slice(0, 10) : endsAt}
                 onChange={(e) => setEndsAt(allDay ? `${e.target.value}T23:59` : e.target.value)}
-                className="w-full mt-1 h-9 px-2 rounded-md border border-border-default bg-surface-0 text-[12px]"
+                className={cn(inputCls, 'mt-1.5 bg-p5-ink-3 border-white/15 text-p5-text')}
               />
             </div>
           </div>
           <div>
-            <label className="text-[11px] text-text-quaternary">Location</label>
+            <label className="p5-kicker text-p5-muted">Location</label>
             <input
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              className="w-full mt-1 h-9 px-3 rounded-md border border-border-default bg-surface-0 text-[13px]"
+              className={cn(inputCls, 'mt-1.5 bg-p5-ink-3 border-white/15 text-p5-text placeholder:text-p5-muted')}
             />
           </div>
           <div>
-            <label className="text-[11px] text-text-quaternary">Description</label>
+            <label className="p5-kicker text-p5-muted">Description</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="w-full mt-1 px-3 py-2 rounded-md border border-border-default bg-surface-0 text-[13px]"
+              className={cn(inputCls, 'mt-1.5 resize-none bg-p5-ink-3 border-white/15 text-p5-text placeholder:text-p5-muted')}
             />
           </div>
-          {err ? <div className="text-[12px] text-status-failed">{err}</div> : null}
-          <div className="flex items-center justify-between pt-1">
-            <div>
-              {event ? (
-                <Button size="sm" variant="destructive" onClick={remove} disabled={busy}>
-                  <Trash2 className="w-3.5 h-3.5" /> Delete
-                </Button>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-              <Button size="sm" onClick={save} disabled={busy}>
-                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                Save
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+          {err ? <div className="text-[12px] text-status-failed font-mono">{err}</div> : null}
+        </div>
+      </div>
+    </Sheet>
   );
 }
 

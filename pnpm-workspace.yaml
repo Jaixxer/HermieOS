@@ -4,5 +4,6 @@ allowBuilds:
   argon2: true
   electron-winstaller: true
   esbuild: true
+  sharp: set this to true or false
 minimumReleaseAgeExclude:
   - argon2@0.45.0

@@ -102,7 +102,7 @@ export function FeedbackButtons({
               onClick={() => handleClick(k)}
               title={M.label}
               aria-label={M.label}
-              className={wasLast ? `text-tone-${M.tone}-text bg-tone-${M.tone}-bg` : undefined}
+              className={compact ? `min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 ${wasLast ? `text-tone-${M.tone}-text bg-tone-${M.tone}-bg` : ''}` : wasLast ? `text-tone-${M.tone}-text bg-tone-${M.tone}-bg` : undefined}
             >
               <Icon />
               {!compact ? <span className="hidden sm:inline">{M.label}</span> : null}
@@ -141,7 +141,7 @@ export function FeedbackButtons({
       ) : null}
 
       {noteOpen ? (
-        <div className="absolute right-0 top-full mt-2 z-20 bg-surface-0 border border-border-default rounded-xl shadow-lg w-80 p-3">
+        <div className="absolute right-0 top-full mt-2 z-20 bg-surface-0 border border-border-default rounded-xl shadow-lg w-80 max-w-[calc(100vw-2rem)] p-3">
           <div className="flex items-center gap-2 text-[12px] font-medium text-text-secondary mb-2">
             <MessageSquare className="w-3.5 h-3.5 text-accent-text" />
             {KIND_META[noteKind].label} — add a note (optional)

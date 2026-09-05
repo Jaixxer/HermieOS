@@ -205,9 +205,14 @@ function startHostNetworked(): void {
   }
   // eslint-disable-next-line no-console
   console.log(`started ${CONTAINER_NAME} on host network (port ${HOST_PORT})`);
+  const hermesLocation = (process.env.HERMES_LOCATION ?? 'docker').toLowerCase();
+  const mcpUrlHint =
+    hermesLocation === 'local'
+      ? `http://127.0.0.1:${HOST_PORT}/mcp`
+      : `http://host.docker.internal:${HOST_PORT}/mcp`;
   // eslint-disable-next-line no-console
   console.log(
-    `Set HERMIEOS_MCP_MODE=host (or HERMES_MCP_URL=http://host.docker.internal:${HOST_PORT}/mcp) ` +
+    `Set HERMIEOS_MCP_MODE=host (or HERMES_MCP_URL=${mcpUrlHint}) ` +
       `and restart Hermes to pick it up.`,
   );
 }

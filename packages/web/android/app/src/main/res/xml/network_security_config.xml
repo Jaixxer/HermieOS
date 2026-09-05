@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Debug/local APK: allow the configured LAN HTTP API. Release
+         deployments should use an HTTPS backend and a hardened policy. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <!-- Debug builds additionally trust the bundled test CA so a local
+         https terminator (self-signed) can be used during development. -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/hermieos_test_ca" />
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>

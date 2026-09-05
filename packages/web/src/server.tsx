@@ -14,7 +14,18 @@ export interface ServerState {
   /** URL-only mode: remember the API origin without an MCP token.
    *  Used after email login so page refreshes know where to call. */
   setBaseUrl: (url: string) => void;
+  /** Ping a server URL without credentials. Classifies it as a
+   *  HermieOS server, unreachable, or something else entirely. */
+  ping: (url: string) => Promise<PingResult>;
   disconnect: () => void;
+}
+
+export type PingStatus = 'ok' | 'unreachable' | 'wrong-server';
+
+export interface PingResult {
+  status: PingStatus;
+  latencyMs: number;
+  detail: string;
 }
 
 function loadStr(key: string): string {
@@ -58,6 +69,32 @@ function normalizeUrl(raw: string): string {
     u = `http://${u}`;
   }
   return u;
+}
+
+/**
+ * Ping a server URL without credentials. GET /me with no token must
+ * answer 401/403 on a real HermieOS API — that proves reachability AND
+ * identity in one cheap call:
+ *   - network error / timeout → unreachable
+ *   - 401/403 (or 200) → a HermieOS server
+ *   - anything else → reachable, but not HermieOS
+ */
+async function pingServer(raw: string): Promise<PingResult> {
+  const u = normalizeUrl(raw);
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+  try {
+    const res = await fetch(`${u}/me`, { signal: AbortSignal.timeout(5000) });
+    const latencyMs = Math.round(performance.now() - t0);
+    if (res.status === 401 || res.status === 403) {
+      return { status: 'ok', latencyMs, detail: `HermieOS server — reachable in ${latencyMs}ms (auth required)` };
+    }
+    if (res.ok) {
+      return { status: 'ok', latencyMs, detail: `HermieOS server — reachable in ${latencyMs}ms` };
+    }
+    return { status: 'wrong-server', latencyMs, detail: `Answered HTTP ${res.status} — this doesn't look like a HermieOS server` };
+  } catch {
+    return { status: 'unreachable', latencyMs: 0, detail: 'No response — check the URL and that the server is running' };
+  }
 }
 
 /**
@@ -179,8 +216,12 @@ export function ServerProvider({ children }: { children: React.ReactNode }): Rea
     setError(null);
   }
 
+  async function ping(raw: string): Promise<PingResult> {
+    return pingServer(raw);
+  }
+
   return (
-    <Ctx.Provider value={{ url, connected, checking, error, connect, setBaseUrl, disconnect }}>
+    <Ctx.Provider value={{ url, connected, checking, error, connect, setBaseUrl, ping, disconnect }}>
       {children}
     </Ctx.Provider>
   );

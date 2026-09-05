@@ -11,28 +11,42 @@
  * A 200 means the server is up and the token is valid.
  */
 import * as React from 'react';
-import { useServer } from '../server';
+import { useServer, type PingResult } from '../server';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Eye, EyeOff } from 'lucide-react';
+import { cn } from '../lib/utils';
 
 export function ConnectPage(): React.JSX.Element {
-  const { connect, checking, error } = useServer();
-  const [url, setUrl] = React.useState('http://localhost:3001');
+  const { connect, checking, error, ping, url: storedUrl } = useServer();
+  const [url, setUrl] = React.useState(storedUrl || 'http://localhost:3001');
   const [token, setToken] = React.useState('');
   const [showToken, setShowToken] = React.useState(false);
+  const [pinging, setPinging] = React.useState(false);
+  const [pingRes, setPingRes] = React.useState<PingResult | null>(null);
 
   async function handleConnect(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     await connect(url, token);
   }
 
+  async function handlePing(): Promise<void> {
+    if (!url.trim() || pinging) return;
+    setPinging(true);
+    setPingRes(null);
+    try {
+      setPingRes(await ping(url));
+    } finally {
+      setPinging(false);
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-1 px-4">
       <Card className="w-full max-w-md shadow-sm">
-        <CardContent className="p-8 space-y-6">
+        <CardContent className="p-6 sm:p-8 space-y-6">
           {/* Logo */}
           <div className="text-center space-y-3">
             <Logo size={56} className="mx-auto" />
@@ -51,21 +65,42 @@ export function ConnectPage(): React.JSX.Element {
               <Input
                 type="text"
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) => { setUrl(e.target.value); setPingRes(null); }}
                 placeholder="http://192.168.1.50:3001"
+                className="h-12 text-[16px]"
+                inputMode="url"
+                autoComplete="url"
               />
               <div className="flex flex-wrap gap-2 mt-2">
                 {['http://localhost:3001', 'http://192.168.'].map((preset) => (
                   <button
                     key={preset}
                     type="button"
-                    onClick={() => setUrl(preset)}
-                    className="text-[11px] px-2 py-1 rounded-md bg-surface-2 text-text-tertiary hover:text-text-primary hover:bg-surface-3 transition-colors"
+                    onClick={() => { setUrl(preset); setPingRes(null); }}
+                    className="text-[11px] px-2 py-1 rounded-md bg-surface-2 text-text-tertiary hover:text-text-primary hover:bg-surface-3 transition-colors min-h-[32px]"
                   >
                     {preset.replace('http://', '')}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => void handlePing()}
+                  disabled={pinging || !url.trim()}
+                  className="text-[11px] font-bold px-2 py-1 rounded-md border border-border-default text-text-secondary hover:text-text-primary transition-colors min-h-[32px] disabled:opacity-40"
+                >
+                  {pinging ? 'Pinging…' : 'Ping server'}
+                </button>
               </div>
+              {pingRes ? (
+                <div className={cn(
+                  'mt-2 text-[12px] border rounded-lg px-3 py-2',
+                  pingRes.status === 'ok' && 'text-emerald-700 bg-emerald-50 border-emerald-200',
+                  pingRes.status === 'unreachable' && 'text-status-failed bg-rose-50 border-rose-100',
+                  pingRes.status === 'wrong-server' && 'text-amber-700 bg-amber-50 border-amber-200',
+                )}>
+                  {pingRes.detail}
+                </div>
+              ) : null}
             </div>
 
             {/* MCP Token */}
@@ -77,13 +112,14 @@ export function ConnectPage(): React.JSX.Element {
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   placeholder="mcp_a1b2c3d4..."
-                  className="pr-10 font-mono"
-                  autoFocus
+                  className="pr-12 font-mono h-12 text-[16px]"
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowToken(!showToken)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-primary transition-colors"
+                  aria-label={showToken ? 'Hide token' : 'Show token'}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center min-w-[44px] min-h-[44px] text-text-tertiary hover:text-text-primary transition-colors"
                 >
                   {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -99,7 +135,7 @@ export function ConnectPage(): React.JSX.Element {
 
             <Button
               type="submit"
-              className="w-full"
+              className="w-full min-h-[48px] text-[15px]"
               disabled={checking || !url.trim() || !token.trim()}
             >
               {checking ? 'Verifying…' : 'Connect'}

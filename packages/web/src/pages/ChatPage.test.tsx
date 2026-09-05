@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ChatPage } from './ChatPage';
@@ -31,6 +31,35 @@ vi.mock('../server', () => ({
     error: null,
   }),
 }));
+
+const { gatewayStub, gwRespond, capturedEvent } = vi.hoisted(() => {
+  const gwRespond = vi.fn().mockResolvedValue({});
+  const capturedEvent: { listener: ((ev: { type: string; payload: Record<string, unknown> }) => void) | null } = { listener: null };
+  const gatewayStub: {
+    status: 'on' | 'off';
+    gw: { ready: boolean; respond: (...args: never[]) => Promise<unknown> } | null;
+    registerListener: (cb: (ev: { type: string; payload: Record<string, unknown> }) => void) => void;
+    createGatewaySession: ReturnType<typeof vi.fn>;
+    resumeGatewaySession: ReturnType<typeof vi.fn>;
+  } = {
+    // Offline by default — mirrors what the real hook yields in tests
+    // (dashboard ticket fails → status 'off'). Tests that need the
+    // gateway flip it online and reset it afterwards.
+    status: 'off',
+    gw: null,
+    registerListener: (cb: (ev: { type: string; payload: Record<string, unknown> }) => void) => {
+      capturedEvent.listener = cb;
+    },
+    createGatewaySession: vi.fn(),
+    resumeGatewaySession: vi.fn(),
+  };
+  return { gatewayStub, gwRespond, capturedEvent };
+});
+
+vi.mock('../gatewayControl', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../gatewayControl')>();
+  return { ...actual, useGatewayControl: () => gatewayStub };
+});
 
 function withQuery(node: React.JSX.Element): React.JSX.Element {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -133,7 +162,7 @@ describe('ChatPage', () => {
 
   it('shows messages for the selected session', async () => {
     render(renderPage('/chat/web_123'));
-    expect(await screen.findByText(/where do i start/i)).toBeInTheDocument();
+    expect((await screen.findAllByText(/where do i start/i)).length).toBeGreaterThan(0);
     expect(await screen.findByText(/look at the auth-middleware first/i)).toBeInTheDocument();
   });
 
@@ -166,7 +195,7 @@ describe('ChatPage', () => {
       message: { role: 'assistant', content: 'OK' },
     });
     render(renderPage('/chat/web_123'));
-    await screen.findByText(/where do i start/i);
+    await screen.findAllByText(/where do i start/i);
     const textarea = screen.getByPlaceholderText(/message hermes agent/i);
     // Simulate typing
     textarea.focus();
@@ -224,7 +253,7 @@ describe('ChatPage', () => {
       has_more: false,
     });
     render(renderPage('/chat/web_xyz'));
-    await screen.findByText(/where do i start/i);
+    await screen.findAllByText(/where do i start/i);
     expect(spy).toHaveBeenCalled();
   });
 
@@ -244,5 +273,47 @@ describe('ChatPage', () => {
     await waitFor(() => {
       expect(renameSpy).toHaveBeenCalled();
     });
+  });
+
+  it('opens a splash for a blocking request, minimizes to an alert, and reopens', async () => {
+    gatewayStub.status = 'on';
+    gatewayStub.gw = { ready: true, respond: (...args: never[]) => gwRespond(...args) };
+    gwRespond.mockResolvedValue({});
+    try {
+      render(renderPage('/chat/web_123'));
+    await screen.findByText('Look at the auth-middleware first.');
+    expect(capturedEvent.listener).not.toBeNull();
+
+    act(() => {
+      capturedEvent.listener!({
+        type: 'clarify.request',
+        payload: { request_id: 'r1', question: 'Which file should I open?' },
+      });
+    });
+
+    // Splash overlay opens with the question.
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('Which file should I open?')).toBeInTheDocument();
+
+    // Minimize: splash closes, alert pill appears in the header.
+    fireEvent.click(screen.getByText('MINIMIZE'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const alert = await screen.findByText('1 PENDING');
+
+    // Reopen from the alert.
+    fireEvent.click(alert);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+
+    // Answer and submit resolves the request and closes the splash.
+    fireEvent.change(screen.getByPlaceholderText('your response…'), { target: { value: 'auth.ts' } });
+    fireEvent.click(screen.getByText('SUBMIT'));
+    await waitFor(() => {
+      expect(gwRespond).toHaveBeenCalledWith('clarify', { request_id: 'r1', answer: 'auth.ts' });
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    } finally {
+      gatewayStub.status = 'off';
+      gatewayStub.gw = null;
+    }
   });
 });

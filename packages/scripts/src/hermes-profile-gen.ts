@@ -199,16 +199,21 @@ async function main(): Promise<void> {
     ? process.env.HERMES_SKILLS_EXTERNAL_DIRS.split(':').filter(Boolean)
     : undefined;
 
-  // Derive the MCP URL from HERMIEOS_MCP_MODE.
-  //   'host'  -> http://host.docker.internal:<mcp_port>/mcp
-  //   'docker'-> http://<container_name>:<mcp_port>/mcp
-  // HERMES_MCP_URL wins as an explicit override.
+  // Derive the MCP URL from HERMIEOS_MCP_MODE + HERMES_LOCATION.
+  //   'host'  + local Hermes  -> http://127.0.0.1:<mcp_port>/mcp
+  //   'host'  + docker Hermes -> http://host.docker.internal:<mcp_port>/mcp
+  //   'docker'                -> http://<container_name>:<mcp_port>/mcp
+  // HERMES_MCP_URL wins as an explicit override. Nothing here is
+  // hardcoded per-install: every part is derived from env.
   const mcpPort = process.env.HERMES_MCP_PORT ?? '3002';
   const mcpMode = (process.env.HERMIEOS_MCP_MODE ?? 'host').toLowerCase();
+  const hermesLocation = (process.env.HERMES_LOCATION ?? 'docker').toLowerCase();
   const defaultMcpUrl =
     mcpMode === 'docker'
       ? `http://${process.env.HERMES_MCP_CONTAINER_NAME ?? 'mcp'}:${mcpPort}/mcp`
-      : `http://host.docker.internal:${mcpPort}/mcp`;
+      : hermesLocation === 'local'
+        ? `http://127.0.0.1:${mcpPort}/mcp`
+        : `http://host.docker.internal:${mcpPort}/mcp`;
   const mcpUrl = process.env.HERMES_MCP_URL ?? defaultMcpUrl;
 
   // Read existing config to know what to preserve
