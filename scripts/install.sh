@@ -30,11 +30,11 @@ set -u
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-ENV_FILE="${HERMIEOS_ENV_FILE:-.env}"
 DRY_RUN="${HERMIEOS_DRY_RUN:-0}"
 ASSUME_YES="${HERMIEOS_ASSUME_YES:-0}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENV_FILE="${HERMIEOS_ENV_FILE:-$ROOT_DIR/.env}"
 
 # ---------------------------------------------------------------------------
 # Terminal helpers
@@ -61,6 +61,9 @@ ask() {
     info "$prompt [$default] (assumed)"
     return
   fi
+  if [ "$ASSUME_YES" = "1" ]; then
+    die "Non-interactive install needs a value for: $prompt"
+  fi
   if [ -n "$default" ]; then
     read -r -p "$prompt [$default] " REPLY
     if [ -z "$REPLY" ]; then REPLY="$default"; fi
@@ -78,7 +81,7 @@ check_prereqs() {
   if command -v node >/dev/null 2>&1; then
     NODE_MAJOR="$(node -e 'console.log(process.versions.node.split(".")[0])' 2>/dev/null || echo 0)"
     if [ "${NODE_MAJOR:-0}" -lt 22 ]; then
-      warn "Node.js ${NODE_MAJOR} detected — HermieOS requires Node 22+."
+      die "Node.js ${NODE_MAJOR} detected — HermieOS requires Node 22+."
     else
       ok "Node.js ${NODE_MAJOR} found"
     fi
@@ -89,7 +92,7 @@ check_prereqs() {
   if command -v pnpm >/dev/null 2>&1; then
     PNPM_MAJOR="$(pnpm --version 2>/dev/null | grep -oE '^[0-9]+' || echo 0)"
     if [ "${PNPM_MAJOR:-0}" -lt 10 ]; then
-      warn "pnpm ${PNPM_MAJOR} detected — HermieOS requires pnpm 10+."
+      die "pnpm ${PNPM_MAJOR} detected — HermieOS requires pnpm 10+."
     else
       ok "pnpm ${PNPM_MAJOR} found"
     fi
@@ -181,12 +184,12 @@ ask_hermes_location() {
 # ---------------------------------------------------------------------------
 ask_hermes_home() {
   # Systemwide Hermes keeps its data in ~/.hermes; the Docker image
-  # uses /opt/hermes (HERMES_HOME inside the container).
+  # uses /opt/data (HERMES_HOME inside the container).
   local default_home
   if [ "$HERMES_LOCATION" = "local" ]; then
     default_home="${HOME}/.hermes"
   else
-    default_home="${HERMES_HOME:-/opt/hermes}"
+    default_home="${HERMES_HOME:-/opt/data}"
   fi
 
   if [ -n "${HERMIEOS_HERMES_HOME:-}" ]; then
@@ -370,6 +373,7 @@ write_env() {
   info "== Writing $ENV_FILE =="
 
   if [ ! -f "$ENV_FILE" ]; then
+    mkdir -p "$(dirname "$ENV_FILE")" || die "could not create the config directory"
     if [ -f "$ROOT_DIR/.env.example" ]; then
       cp "$ROOT_DIR/.env.example" "$ENV_FILE"
       ok "created from .env.example"
@@ -415,24 +419,6 @@ write_env() {
   upsert "HERMES_DASHBOARD_PASSWORD" "$HERMES_DASHBOARD_PASSWORD"
 
   ok "$ENV_FILE updated"
-}
-
-# ---------------------------------------------------------------------------
-# Summary
-# ---------------------------------------------------------------------------
-print_summary() {
-  info ""
-  info "== Configuration summary =="
-  say  ""
-  printf '  %-28s %s\n' "Hermes gateway:" "$GATEWAY_URL"
-  printf '  %-28s %s\n' "Hermes API key:" "${HERMES_API_KEY:+****${HERMES_API_KEY: -4}}"
-  printf '  %-28s %s\n' "Database:" "$DATABASE_URL"
-  printf '  %-28s %s\n' "MCP mode:" "$MCP_MODE"
-  printf '  %-28s %s\n' "MCP public URL:" "$MCP_PUBLIC_URL"
-  printf '  %-28s %s\n' "Hermes→MCP URL:" "$HERMES_MCP_URL"
-  printf '  %-28s %s\n' "Hermes user email:" "$HERMES_USER_EMAIL"
-  printf '  %-28s %s\n' "Hermes profile:" "$HERMES_PROFILE_NAME"
-  say  ""
 }
 
 # ---------------------------------------------------------------------------
@@ -499,7 +485,17 @@ wire_hermes() {
         say  "       pnpm hermes:mcp-register   (with HERMES_USER_EMAIL, HERMES_MCP_URL set)"
       fi
 
-      ( cd "$ROOT_DIR" && HERMES_HOME="$HERMES_HOME" pnpm hermes:skills-deploy ) || warn "skills-deploy failed."
+      case "$HERMES_LOCATION" in
+        local)
+          ( cd "$ROOT_DIR" && HERMES_HOME="$HERMES_HOME" pnpm hermes:skills-deploy ) || warn "skills-deploy failed."
+          ;;
+        docker)
+          warn "Skipping host-side skill deployment for Docker Hermes; deploy packages/skills inside the Hermes container or mount them into it."
+          ;;
+        remote)
+          warn "Skipping local skill deployment for remote Hermes; run pnpm hermes:skills-deploy on the remote box."
+          ;;
+      esac
 
       # Dangerous-command approvals: default to MANUAL so the user always
       # decides (the smart judge auto-approves low-risk commands otherwise).

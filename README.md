@@ -4,7 +4,17 @@ A personal operating system around Hermes Agent. The long-running agent is the b
 
 ## Status
 
-Feature-complete through Phase 10.6 + Phase 11: dashboard redesign (Mission / Opportunities / Knowledge pages), notifications pipeline with native OS notifications in the desktop app, knowledge graph + settings improvements, two-way Google Calendar sync — plus finding conversations: a dedicated discuss page per finding, immediate follow-ups (chat or tracked background runs) that record raw feedback, a snap-scrolling findings deck, and scout self-tuning via MCP (Hermes can retune its own scouts; every run is visible in the Feed). All wired to a real Hermes instance (or the "fake Hermes" stand-in for the demo loop).
+HermieOS is a responsive web client with Electron desktop packaging and a native Android shell. It connects to an existing Hermes Agent instance and keeps persistence, presentation, MCP tools, scheduling, chat, scouting, missions, findings, and knowledge in one workspace.
+
+## Releases
+
+See the [v0.0.1 release](https://github.com/Jaixxer/HermieOS/releases/tag/v0.0.1):
+
+- [Android APK](https://github.com/Jaixxer/HermieOS/releases/download/v0.0.1/app-debug.apk) — debug build for local testing
+- [Linux AppImage](https://github.com/Jaixxer/HermieOS/releases/download/v0.0.1/HermieOS-0.0.1.AppImage)
+- [Linux Debian package](https://github.com/Jaixxer/HermieOS/releases/download/v0.0.1/HermieOS-0.0.1.deb)
+
+The Android debug build is intended for testing. Production deployments should use HTTPS for the API and Hermes gateway.
 
 ## Prereqs
 
@@ -27,6 +37,18 @@ docker compose up -d postgres
 # 4. run migrations (creates the schema)
 pnpm db:migrate
 ```
+
+## Installer
+
+The interactive installer creates `.env`, checks prerequisites, starts the selected database, applies migrations, and optionally wires Hermes to the HermieOS MCP server:
+
+```bash
+git clone https://github.com/Jaixxer/HermieOS.git
+cd HermieOS
+./scripts/install.sh
+```
+
+Use `HERMIEOS_DRY_RUN=1 ./scripts/install.sh` to configure without installing or migrating. The installer never stores credentials in Git; `.env` is ignored.
 
 ## Dev loop
 
@@ -100,12 +122,16 @@ cd packages/web && npx electron-builder --linux AppImage
 
 The web client expects the API on `:3001`. In dev, the Vite dev server proxies `/api/*` to `http://localhost:3001`.
 
+## Mobile app
+
+Install the Android APK from the release page, then set the HermieOS server URL in Connect or Settings. For a server on the same Wi-Fi network, use its LAN address, for example `http://192.168.1.7:3001`, and provide the account MCP token. The phone and server must be on the same network.
+
 ## Repo layout
 
 ```
 HermieOs/
-├── SPEC.md
-├── docs/                   # design + roadmap + decisions + codebase guide
+├── LICENSE                 # MIT license
+├── scripts/install.sh      # interactive installer
 ├── packages/
 │   ├── api/                # user-facing HTTP + SSE (Fastify, :3001)
 │   ├── mcp/                # MCP server Hermes talks to (:3002) + THE DATA LAYER
@@ -122,17 +148,6 @@ HermieOs/
 └── pnpm-workspace.yaml
 ```
 
-## How to use this repo
+## License
 
-- **`docs/guide.md`** — the codebase map: layers, where things live, key flows, testing, gotchas. Read this first (humans and agents alike).
-- **`docs/roadmap.md`** — the high-level plan. Each phase has an exit criterion.
-- **`docs/decisions.md`** — records the locked design choices.
-- **`docs/data-model.md`** — the schema spec (all 18 tables).
-- **`docs/mcp-tools.md`** — the full tool surface Hermes can call.
-- **`docs/hermes-integration.md`** — the wiring for a real Hermes install.
-- **`docs/follow-ups.md`** — finding conversations, immediate follow-ups, the findings deck, scout self-tuning.
-- **`SPEC.md`** — the full product spec.
-
-## Status table
-
-See `docs/roadmap.md` → "Tracking" for the phase status table. Current state: Phases 0–10.6 + 11 (finding conversations, immediate follow-ups, findings deck, scout self-tuning) are done.
+HermieOS is released under the [MIT License](./LICENSE).

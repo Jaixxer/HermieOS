@@ -49,6 +49,7 @@
  *     container in docker-compose.yml does this on first run.
  */
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import {
   readFileSync,
   writeFileSync,
@@ -366,6 +367,7 @@ export function deploySkills(): DeployResult {
           source_sha256: newSha,
           deployed_at: new Date().toISOString(),
           user_modified: false,
+          files,
         };
         result.installed.push(skill);
         continue;
@@ -437,8 +439,7 @@ function main(): void {
   // container can read them. This is a no-op when running inside
   // the container; on the host it ensures the volume's UID 10000
   // owner can use the files.
-  if (result.installed.length > 0 || result.warned.length > 0) {
-    const { spawnSync } = require('node:child_process');
+  if ((result.installed.length > 0 || result.warned.length > 0) && process.getuid?.() === 0) {
     spawnSync('chown', ['-R', '10000:10000', TARGET], { stdio: 'inherit' });
   }
   if (result.failed > 0) process.exit(1);
