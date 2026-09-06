@@ -1,5 +1,5 @@
 /**
- * Security audit: Phase 5 acceptance criteria from docs/roadmap.md.
+ * Security audit: Phase 5 acceptance criteria.
  *
  * - No secrets in logs
  * - No PII in URLs

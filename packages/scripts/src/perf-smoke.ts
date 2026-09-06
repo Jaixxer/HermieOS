@@ -3,7 +3,7 @@
  * returns in < 100ms; a search query for a user with 10k Objects
  * returns in < 200ms.
  *
- * Per the Phase 5 exit criterion in docs/roadmap.md.
+ * Per the Phase 5 performance acceptance criterion.
  *
  * Run with: tsx packages/scripts/src/perf-smoke.ts
  */
