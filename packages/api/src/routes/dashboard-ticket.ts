@@ -43,10 +43,18 @@ export function registerDashboardTicketRoutes(app: FastifyInstance): void {
     const password = process.env.HERMES_DASHBOARD_PASSWORD ?? '';
 
     if (!baseUrl || !publicUrl || !username || !password) {
+      const missing = [
+        !baseUrl && 'HERMES_DASHBOARD_URL',
+        !publicUrl && 'HERMES_DASHBOARD_PUBLIC_URL',
+        !username && 'HERMES_DASHBOARD_USERNAME',
+        !password && 'HERMES_DASHBOARD_PASSWORD',
+      ]
+        .filter(Boolean)
+        .join(', ');
       return sendError(
         reply,
         new ServiceUnavailable(
-          'Dashboard gateway is not configured (HERMES_DASHBOARD_URL / HERMES_DASHBOARD_PUBLIC_URL / HERMES_DASHBOARD_USERNAME / HERMES_DASHBOARD_PASSWORD)',
+          `Dashboard gateway is not configured (stage=config; missing: ${missing})`,
         ),
         String(req.id),
       );
@@ -60,14 +68,34 @@ export function registerDashboardTicketRoutes(app: FastifyInstance): void {
       const payload: TicketResponse = { wsUrl, ticket, provider: 'basic' };
       return reply.send(payload);
     } catch (e) {
-      app.log.error({ err: e, url: baseUrl }, 'dashboard ticket mint failed');
+      const stage = e instanceof TicketStageError ? e.stage : 'unreachable';
+      const detail = e instanceof Error ? e.message : String(e);
+      app.log.error({ err: e, url: baseUrl, stage }, 'dashboard ticket mint failed');
       return sendError(
         reply,
-        new ServiceUnavailable('Could not reach the Hermes dashboard gateway'),
+        new ServiceUnavailable(`Hermes dashboard gateway failed (stage=${stage}): ${detail}`),
         String(req.id),
       );
     }
   });
+}
+
+class TicketStageError extends Error {
+  readonly stage: 'unreachable' | 'login' | 'ticket';
+  constructor(stage: 'unreachable' | 'login' | 'ticket', message: string) {
+    super(message);
+    this.name = 'TicketStageError';
+    this.stage = stage;
+  }
+}
+
+async function readBodySnippet(res: Response): Promise<string> {
+  try {
+    const text = await res.text();
+    return text.slice(0, 500);
+  } catch {
+    return '';
+  }
 }
 
 async function mintTicket(baseUrl: string, username: string, password: string): Promise<string> {
@@ -75,32 +103,56 @@ async function mintTicket(baseUrl: string, username: string, password: string): 
   //    for the ticket endpoint. Node's fetch has no cookie jar, so we
   //    carry the Set-Cookie headers manually. (The auth router is
   //    mounted at the dashboard root: /auth/password-login.)
-  const loginRes = await fetch(`${baseUrl}/auth/password-login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ provider: 'basic', username, password, next: '' }),
-  });
+  let loginRes: Response;
+  try {
+    loginRes = await fetch(`${baseUrl}/auth/password-login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'basic', username, password, next: '' }),
+    });
+  } catch (e) {
+    throw new TicketStageError(
+      'unreachable',
+      `connect to ${baseUrl} failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
   if (!loginRes.ok) {
-    throw new Error(`dashboard login failed: HTTP ${loginRes.status}`);
+    const snippet = await readBodySnippet(loginRes);
+    throw new TicketStageError(
+      'login',
+      `dashboard login failed: HTTP ${loginRes.status}${snippet ? ` — ${snippet}` : ''}`,
+    );
   }
   const cookies = loginRes.headers.getSetCookie?.() ?? [];
   if (cookies.length === 0) {
-    throw new Error('dashboard login returned no session cookie');
+    throw new TicketStageError('login', 'dashboard login returned no session cookie');
   }
   const cookieHeader = cookies.map((c) => c.split(';')[0]).join('; ');
 
   // 2. Mint the single-use WS ticket with the session cookie.
-  const ticketRes = await fetch(`${baseUrl}/api/auth/ws-ticket`, {
-    method: 'POST',
-    headers: { cookie: cookieHeader },
-    body: '{}',
-  });
+  let ticketRes: Response;
+  try {
+    ticketRes = await fetch(`${baseUrl}/api/auth/ws-ticket`, {
+      method: 'POST',
+      headers: { cookie: cookieHeader, 'content-type': 'application/json' },
+      body: '{}',
+    });
+  } catch (e) {
+    throw new TicketStageError(
+      'unreachable',
+      `ws-ticket request to ${baseUrl} failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
   if (!ticketRes.ok) {
-    throw new Error(`ws-ticket failed: HTTP ${ticketRes.status}`);
+    const snippet = await readBodySnippet(ticketRes);
+    throw new TicketStageError(
+      'ticket',
+      `ws-ticket failed: HTTP ${ticketRes.status}${snippet ? ` — ${snippet}` : ''}`,
+    );
   }
   const body = (await ticketRes.json()) as { ticket?: string };
   if (!body.ticket) {
-    throw new Error('ws-ticket returned no ticket');
+    throw new TicketStageError('ticket', 'ws-ticket returned no ticket');
   }
   return body.ticket;
 }

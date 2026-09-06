@@ -28,7 +28,7 @@ The Android debug build is intended for testing. Production deployments should u
 # 1. install deps
 pnpm install
 
-# 2. copy env
+# 2. copy env (DATABASE_URL already points at the compose Postgres on 15432)
 cp .env.example .env
 
 # 3. bring up Postgres
@@ -37,6 +37,8 @@ docker compose up -d postgres
 # 4. run migrations (creates the schema)
 pnpm db:migrate
 ```
+
+Services load the repo-root `.env` themselves — no `set -a; . ./.env` needed for the dev loop. See [AGENT_GUIDE.md](./AGENT_GUIDE.md) for the full deployment-mode matrix (local Hermes / Hermes-in-Docker / remote Hermes × host/docker MCP × existing Postgres).
 
 ## Installer
 
@@ -124,7 +126,7 @@ The web client expects the API on `:3001`. In dev, the Vite dev server proxies `
 
 ## Mobile app
 
-Install the Android APK from the release page, then set the HermieOS server URL in Connect or Settings. For a server on the same Wi-Fi network, use its LAN address, for example `http://192.168.1.7:3001`, and provide the account MCP token. The phone and server must be on the same network.
+Install the Android APK from the release page, then set the HermieOS server URL in Connect or Settings. For a server on the same Wi-Fi network, use its LAN address, for example `http://192.168.1.7:3001`. Sign in with your email & password (the MCP token is fetched automatically) or paste an MCP token directly. The phone and server must be on the same network.
 
 ## Repo layout
 

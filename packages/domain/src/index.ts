@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export { loadRootEnv } from './env.js';
+
 // --- Enums ---
 
 export const objectTypeSchema = z.enum([

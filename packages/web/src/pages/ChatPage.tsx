@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus,
   Send,
@@ -24,7 +24,7 @@ import {
   Bell,
   ArrowRight,
 } from 'lucide-react';
-import { api, type HermesSession, type HermesMessage, type HermesInfo, type HermesSessionList, type HermesMessageList } from '../api';
+import { api, type HermesSession, type HermesMessage, type HermesInfo } from '../api';
 import { TuiGateway } from '../tuiGateway';
 import { useGatewayControl, gwMapGet, type GatewayControl } from '../gatewayControl';
 import { cn, formatRelative } from '../lib/utils';
@@ -47,6 +47,8 @@ interface SlashCommand {
   hint: string;
   cliOnly?: boolean;
 }
+
+const SESSIONS_PAGE_SIZE = 20;
 
 const SLASH_COMMANDS: SlashCommand[] = [
   // Session management
@@ -132,19 +134,41 @@ export function ChatPage(): React.JSX.Element {
     staleTime: 60 * 60 * 1000, // 1 hour
   });
 
-  const sessionsQ = useQuery({
+  // Latest 20 sessions, then older pages on scroll. Paginating keeps
+  // the initial paint cheap for users with long histories.
+  const sessionsQ = useInfiniteQuery({
     queryKey: ['hermes-sessions'],
-    queryFn: () => api.hermesListSessions(hermesInfo.data!, { limit: 200 }),
-    enabled: !!hermesInfo.data,
-    refetchInterval: 30_000,
+    queryFn: ({ pageParam }) =>
+      api.hermesListSessions(hermesInfo.data!, {
+        limit: SESSIONS_PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (last, allPages) =>
+      // Guard the empty-page edge: a has_more=true with zero rows must
+      // not loop forever.
+      last.has_more && last.data.length > 0 ? allPages.length * SESSIONS_PAGE_SIZE : undefined,
+    // When the API reports the Hermes gateway is not configured
+    // (neither HERMES_PUBLIC_URL nor HERMES_GATEWAY_URL set), the
+    // baseUrl is a best guess and /api/sessions would 404 forever —
+    // don't poll it masking the failure.
+    enabled: !!hermesInfo.data && hermesInfo.data.gatewayConfigured,
+    // Surface terminal errors (404/ECONNREFUSED) instead of silently
+    // retrying them forever.
+    retry: 1,
   });
+
+  const allSessions = React.useMemo(
+    () => sessionsQ.data?.pages.flatMap((p) => p.data) ?? [],
+    [sessionsQ.data],
+  );
 
   const activeTitle = React.useMemo(() => {
     if (!sessionId) return null;
-    const s = sessionsQ.data?.data?.find((x) => x.id === sessionId);
+    const s = allSessions.find((x) => x.id === sessionId);
     if (!s) return null;
     return s.title || s.preview || null;
-  }, [sessionsQ.data, sessionId]);
+  }, [allSessions, sessionId]);
 
   const renameMutation = useMutation({
     mutationFn: async (newTitle: string) => {
@@ -170,13 +194,23 @@ export function ChatPage(): React.JSX.Element {
         />
         <div className="flex-1 min-h-0 flex">
           {hermesInfo.data ? (
-            <ChatBody
-              info={hermesInfo.data}
-              activeSessionId={sessionId ?? null}
-              onSelect={(id) => nav(`/chat/${id}`)}
-              sessions={sessionsQ}
-              gateway={gateway}
-            />
+            hermesInfo.data.gatewayConfigured ? (
+              <ChatBody
+                info={hermesInfo.data}
+                activeSessionId={sessionId ?? null}
+                onSelect={(id) => nav(`/chat/${id}`)}
+                sessions={allSessions}
+                loading={sessionsQ.isLoading}
+                error={sessionsQ.error as Error | null}
+                hasMore={sessionsQ.hasNextPage ?? false}
+                loadingMore={sessionsQ.isFetchingNextPage}
+                onLoadMore={() => void sessionsQ.fetchNextPage()}
+                onRefresh={() => void sessionsQ.refetch()}
+                gateway={gateway}
+              />
+            ) : (
+              <GatewayNotConfigured info={hermesInfo.data} onRetry={() => hermesInfo.refetch()} />
+            )
           ) : hermesInfo.isLoading ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="font-mono text-[12px] tracking-widest text-p5-dark-muted">CONNECTING TO HERMES AGENT…</div>
@@ -210,6 +244,53 @@ export function ChatPage(): React.JSX.Element {
 // ============================================================================
 // Header bar
 // ============================================================================
+
+/**
+ * The API has no Hermes gateway configured (neither HERMES_PUBLIC_URL
+ * nor HERMES_GATEWAY_URL). Chat cannot work without it — show the fix
+ * instead of an infinite spinner.
+ */
+function GatewayNotConfigured({
+  info,
+  onRetry,
+}: {
+  info: HermesInfo;
+  onRetry: () => void;
+}): React.JSX.Element {
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="w-full max-w-md mx-6 border-2 border-black/15 bg-p5-panel p-8 text-center space-y-3">
+        <AlertCircle className="w-8 h-8 mx-auto text-status-failed" />
+        <p className="text-[15px] font-black tracking-tight text-p5-dark">
+          Hermes gateway not configured
+        </p>
+        <p className="text-[12px] text-p5-dark-muted">
+          The HermieOS API server has no HERMES_PUBLIC_URL or HERMES_GATEWAY_URL set, so it
+          cannot tell the app where the Hermes API server (port 8642) lives.
+        </p>
+        <p className="text-[11px] text-p5-dark-muted font-mono break-all">
+          attempted: {info.baseUrl}
+        </p>
+        <p className="text-[12px] text-p5-dark-muted text-left border border-black/10 bg-white p-3">
+          On the server, set one of the following in <code>.env</code> and restart the API:
+          <br />
+          <code>HERMES_GATEWAY_URL=http://127.0.0.1:8642</code>
+          <br />
+          or, for browser/mobile access, <code>HERMES_PUBLIC_URL=http://&lt;host&gt;:8642</code>.
+          The Hermes API server is part of <code>hermes gateway run</code> (or the compose
+          <code> hermes</code> service) — a messaging-gateway-only install will not serve it.
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="inline-flex items-center gap-1.5 bg-accent px-4 py-2 text-[11px] font-black tracking-[0.12em] text-white transition hover:bg-accent-hover"
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> Retry
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function ChatHeader({
   info,
@@ -336,12 +417,24 @@ function ChatBody({
   activeSessionId,
   onSelect,
   sessions,
+  loading,
+  error,
+  hasMore,
+  loadingMore,
+  onLoadMore,
+  onRefresh,
   gateway,
 }: {
   info: HermesInfo;
   activeSessionId: string | null;
   onSelect: (id: string) => void;
-  sessions: ReturnType<typeof useQuery<HermesSessionList>>;
+  sessions: HermesSession[];
+  loading: boolean;
+  error: Error | null;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
+  onRefresh: () => void;
   gateway: GatewayControl;
 }): React.JSX.Element {
   const qc = useQueryClient();
@@ -354,8 +447,7 @@ function ChatBody({
 
   // Group sessions by source so the user can find Discord/Telegram/etc.
   const groups = React.useMemo(() => {
-    const all = sessions.data?.data ?? [];
-    const filtered = all
+    const filtered = sessions
       .filter((s) => {
         if (sourceFilter && s.source !== sourceFilter) return false;
         if (filter) {
@@ -385,15 +477,15 @@ function ChatBody({
         sessions: list,
       }))
       .sort((a, b) => b.sessions.length - a.sessions.length);
-  }, [sessions.data, filter, sourceFilter]);
+  }, [sessions, filter, sourceFilter]);
 
   const sourcesInUse = React.useMemo(() => {
     const counts = new Map<string, number>();
-    for (const s of sessions.data?.data ?? []) {
+    for (const s of sessions) {
       counts.set(s.source, (counts.get(s.source) ?? 0) + 1);
     }
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  }, [sessions.data]);
+  }, [sessions]);
 
   return (
     <>
@@ -407,8 +499,12 @@ function ChatBody({
         sourceFilter={sourceFilter}
         setSourceFilter={setSourceFilter}
         sources={sourcesInUse.map(([s, n]) => ({ source: s, label: SOURCE_LABELS[s] ?? s, count: n }))}
-        loading={sessions.isLoading}
-        onRefresh={() => sessions.refetch()}
+        loading={loading}
+        error={error}
+        hasMore={hasMore}
+        loadingMore={loadingMore}
+        onLoadMore={onLoadMore}
+        onRefresh={onRefresh}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         onDelete={(id) => {
@@ -426,7 +522,7 @@ function ChatBody({
           onOpenArchive={() => setDrawerOpen(true)}
         />
       ) : activeSessionId ? (
-        <ChatView info={info} sessionId={activeSessionId} model={(sessions.data?.data ?? []).find(s => s.id === activeSessionId)?.model ?? null} onSelect={onSelect} allSessions={sessions.data?.data ?? []} gateway={gateway} onOpenArchive={() => setDrawerOpen(true)} />
+        <ChatView info={info} sessionId={activeSessionId} model={sessions.find(s => s.id === activeSessionId)?.model ?? null} onSelect={onSelect} allSessions={sessions} gateway={gateway} onOpenArchive={() => setDrawerOpen(true)} />
       ) : (
         <EmptyChatState onCreate={() => onSelect('__new__')} onOpenArchive={() => setDrawerOpen(true)} />
       )}
@@ -449,6 +545,10 @@ function SessionsPanel({
   setSourceFilter,
   sources,
   loading,
+  error,
+  hasMore,
+  loadingMore,
+  onLoadMore,
   onRefresh,
   onDelete,
   open,
@@ -464,11 +564,26 @@ function SessionsPanel({
   setSourceFilter: (v: string | null) => void;
   sources: Array<{ source: string; label: string; count: number }>;
   loading: boolean;
+  error: Error | null;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   onRefresh: () => void;
   onDelete: (id: string) => void;
   open: boolean;
   onClose: () => void;
 }): React.JSX.Element {
+  // Scroll pagination: fetch the next page of older sessions as the
+  // list approaches its bottom.
+  const listRef = React.useRef<HTMLDivElement>(null);
+  function handleScroll(): void {
+    const el = listRef.current;
+    if (!el || !hasMore || loadingMore) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
+      onLoadMore();
+    }
+  }
+
   return (
     <>
       {open ? (
@@ -536,35 +651,60 @@ function SessionsPanel({
         ) : null}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={listRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
         {loading && groups.length === 0 ? (
           <div className="p-6 text-center font-mono text-[11px] tracking-widest text-p5-dark-muted">LOADING…</div>
+        ) : error && groups.length === 0 ? (
+          <div className="p-6 text-center space-y-2">
+            <p className="font-mono text-[11px] tracking-widest text-status-failed">SESSIONS UNREACHABLE</p>
+            <p className="text-[11px] text-p5-dark-muted break-words">{error.message}</p>
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="inline-flex items-center gap-1.5 bg-accent px-3 py-1.5 text-[10px] font-black tracking-[0.12em] text-white transition hover:bg-accent-hover"
+            >
+              <RefreshCw className="w-3 h-3" /> Retry
+            </button>
+          </div>
         ) : groups.length === 0 ? (
           <div className="p-6 text-center font-mono text-[11px] tracking-widest text-p5-dark-muted">
             {filter || sourceFilter ? 'NO SESSIONS MATCH.' : 'NO SESSIONS YET.'}
           </div>
         ) : (
-          groups.map((g) => (
-            <div key={g.source} className="border-b border-black/[0.07] last:border-0">
-              <div className="flex items-center justify-between bg-black/[0.03] px-4 py-2">
-                <span className="p5-kicker text-p5-dark-muted">{g.label}</span>
-                <span className="font-mono text-[10px] text-p5-dark-muted">{String(g.sessions.length).padStart(2, '0')}</span>
+          <>
+            {groups.map((g) => (
+              <div key={g.source} className="border-b border-black/[0.07] last:border-0">
+                <div className="flex items-center justify-between bg-black/[0.03] px-4 py-2">
+                  <span className="p5-kicker text-p5-dark-muted">{g.label}</span>
+                  <span className="font-mono text-[10px] text-p5-dark-muted">{String(g.sessions.length).padStart(2, '0')}</span>
+                </div>
+                {g.sessions.map((s) => (
+                  <SessionRow
+                    key={s.id}
+                    session={s}
+                    active={s.id === activeSessionId}
+                    onSelect={() => onSelect(s.id)}
+                    onDelete={() => {
+                      if (window.confirm(`Delete session "${s.title || s.id}"?`)) {
+                        onDelete(s.id);
+                      }
+                    }}
+                  />
+                ))}
               </div>
-              {g.sessions.map((s) => (
-                <SessionRow
-                  key={s.id}
-                  session={s}
-                  active={s.id === activeSessionId}
-                  onSelect={() => onSelect(s.id)}
-                  onDelete={() => {
-                    if (window.confirm(`Delete session "${s.title || s.id}"?`)) {
-                      onDelete(s.id);
-                    }
-                  }}
-                />
-              ))}
-            </div>
-          ))
+            ))}
+            {loadingMore ? (
+              <div className="p-3 text-center font-mono text-[10px] tracking-widest text-p5-dark-muted">LOADING OLDER SESSIONS…</div>
+            ) : hasMore ? (
+              <button
+                type="button"
+                onClick={onLoadMore}
+                className="w-full p-3 text-center font-mono text-[10px] tracking-widest text-p5-dark-muted hover:text-p5-dark transition"
+              >
+                LOAD OLDER SESSIONS
+              </button>
+            ) : null}
+          </>
         )}
       </div>
 

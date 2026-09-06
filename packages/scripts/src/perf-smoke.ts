@@ -9,9 +9,12 @@
  */
 import { sql as drizzleSql } from 'drizzle-orm';
 import { createDatabase, closeDatabase, schema } from '@hermieos/db';
+import { loadRootEnv } from '@hermieos/domain';
+
+loadRootEnv();
 
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:15432/hermieos';
 }
 const URL = process.env.DATABASE_URL;
 

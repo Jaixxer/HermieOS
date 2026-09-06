@@ -54,10 +54,13 @@ import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { createDatabase, closeDatabase, schema } from '@hermieos/db';
+import { loadRootEnv } from '@hermieos/domain';
 import YAML from 'yaml';
 
+loadRootEnv();
+
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:15432/hermieos';
 }
 if (!process.env.HERMES_USER_EMAIL) {
   // eslint-disable-next-line no-console

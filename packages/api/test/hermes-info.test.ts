@@ -15,7 +15,7 @@ async function cleanup(): Promise<void> {
 
 beforeAll(async () => {
   db = createDatabase({
-    url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos',
+    url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos',
   });
   app = await buildApp();
   await cleanup();
@@ -91,6 +91,7 @@ describe('GET /me/hermes-info', () => {
     expect((info.body.baseUrl as string).length).toBeGreaterThan(0);
     expect(typeof info.body.token).toBe('string');
     expect((info.body.token as string).startsWith('mcp_')).toBe(true);
+    expect(typeof info.body.gatewayConfigured).toBe('boolean');
   });
 
   it('rejects an invalid session cookie', async () => {

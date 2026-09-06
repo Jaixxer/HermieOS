@@ -8,7 +8,7 @@ import { buildMcpApp } from './server.js';
 import { ToolRegistry } from './registry.js';
 import { z } from 'zod';
 
-const db = createDatabase({ url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos' });
+const db = createDatabase({ url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos' });
 
 async function seedUser(label: string): Promise<{ id: string; token: string }> {
   const token = `tok_${label}_${randomBytes(8).toString('hex')}`;

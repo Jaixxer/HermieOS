@@ -128,6 +128,10 @@ export interface LoginResponse {
   user: User;
   token: string;
   apiBase: string;
+  /** The account's MCP token — returned by the API so desktop/mobile
+   *  clients can upgrade from a session token to the long-lived
+   *  connect credential in one call. */
+  mcpToken: string;
 }
 
 export type TaskStatus = 'todo' | 'in_progress' | 'blocked' | 'done' | 'cancelled';
@@ -312,6 +316,10 @@ export interface HermesInfo {
   baseUrl: string;
   /** Bearer token (the user's MCP token) */
   token: string;
+  /** False when neither HERMES_PUBLIC_URL nor HERMES_GATEWAY_URL is set
+   *  on the API — the baseUrl above is a best-guess and /api/sessions
+   *  will 404 against it. The UI should show "gateway not configured". */
+  gatewayConfigured: boolean;
 }
 
 export type HermesSessionSource =

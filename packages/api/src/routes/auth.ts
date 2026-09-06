@@ -51,6 +51,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       user: publicUser(user),
       mcpToken: user.mcpToken, // shown once
       token: session.token,    // bearer token for persistent clients
+      apiBase: apiBaseFor(req), // let desktop/mobile clients persist the origin
     };
   });
 
@@ -164,7 +165,7 @@ async function mcpTokenFor(userId: string): Promise<string> {
   // stack. We open a short-lived client per call to avoid coupling
   // auth to the request-scoped db pool; sessions are infrequent.
   const db = createDatabase({
-    url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos',
+    url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos',
     max: 1,
   });
   try {

@@ -7,7 +7,7 @@ import { setDb } from './data/auth.js';
 import { SESSION_COOKIE_NAME, registerAuthDecorators, getSessionUser } from './auth-middleware.js';
 import { sendError, NotFound, BadRequest, Unauthorized } from './errors.js';
 
-const URL = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+const URL = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos';
 
 describe('error responses', () => {
   let app: FastifyInstance;

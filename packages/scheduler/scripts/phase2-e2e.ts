@@ -27,7 +27,7 @@ import { trackRunsOnce, type RunTrackerSummary } from '../src/run-tracker.js';
 import { setDb } from '../src/db.js';
 import { makeFakeHermes, type FakeHermes } from '../src/test-helpers/fake-hermes.js';
 
-const URL = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+const URL = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos';
 const db = createDatabase({ url: URL });
 setDb(db);
 

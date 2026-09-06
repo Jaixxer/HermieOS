@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { api } from '../api';
 
-const INFO = { baseUrl: 'http://hermes.local:8642', token: 'mcp_test' };
+const INFO = { baseUrl: 'http://hermes.local:8642', token: 'mcp_test', gatewayConfigured: true };
 
 beforeEach(() => {
   vi.restoreAllMocks();

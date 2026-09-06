@@ -31,7 +31,7 @@ import { registerRelationshipAndSubscriptionTools } from '../src/tools/misc.js';
 import { registerNotifyTool } from '../src/tools/notify.js';
 import { registerRunsTool } from '../src/tools/runs.js';
 
-const URL = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+const URL = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos';
 const db = createDatabase({ url: URL });
 
 let passed = 0;

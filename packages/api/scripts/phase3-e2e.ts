@@ -27,7 +27,7 @@ import { buildApp } from '../src/server.js';
 import { setDb } from '../src/data/auth.js';
 import { createDatabase, schema, closeDatabase } from '@hermieos/db';
 
-const URL = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+const URL = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos';
 const db = createDatabase({ url: URL });
 setDb(db);
 

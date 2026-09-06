@@ -35,8 +35,10 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   mcpToken: string | null;
-  signup: (email: string, password: string, displayName?: string) => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  /** Resolves with the account's MCP token (or null when the server
+   *  doesn't return one) so a connect screen can finish connecting. */
+  signup: (email: string, password: string, displayName?: string) => Promise<string | null>;
+  login: (email: string, password: string) => Promise<string | null>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   rotateToken: () => Promise<string>;
@@ -129,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   }, [connected, refresh]);
 
   const signup = useCallback(
-    async (email: string, password: string, displayName?: string) => {
+    async (email: string, password: string, displayName?: string): Promise<string | null> => {
       const res = await api.signup({ email, password, displayName });
       setUser(res.user);
       setMcpToken(res.mcpToken);
@@ -145,11 +147,12 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         setBaseUrl(base);
         storeStr('hermieos_api_base', base);
       }
+      return res.mcpToken ?? null;
     },
     [setBaseUrl],
   );
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string): Promise<string | null> => {
     const res = await api.login({ email, password });
     setUser(res.user);
     setMcpToken(null);
@@ -160,6 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       setBaseUrl(base);
       storeStr('hermieos_api_base', base);
     }
+    return res.mcpToken || null;
   }, [setBaseUrl]);
 
   const logout = useCallback(async () => {

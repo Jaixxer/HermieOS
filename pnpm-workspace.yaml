@@ -4,6 +4,10 @@ allowBuilds:
   argon2: true
   electron-winstaller: true
   esbuild: true
-  sharp: set this to true or false
+  # Backend-only bring-ups never need sharp (pulled via @capacitor/assets
+  # for Android icon/splash generation). Keep false so `pnpm install`
+  # succeeds on constrained networks without downloading libvips.
+  # Desktop packagers that need sharp can run `pnpm approve-builds sharp`.
+  sharp: false
 minimumReleaseAgeExclude:
   - argon2@0.45.0

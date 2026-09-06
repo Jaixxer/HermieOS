@@ -179,7 +179,7 @@ function startHostNetworked(): void {
   // eslint-disable-next-line no-console
   console.log(`starting ${CONTAINER_NAME} with --network host (MCP shares host's network)`);
   buildImage(IMAGE, process.env.HERMIEOS_IMAGE_BUILD === '1');
-  const dbUrl = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@127.0.0.1:5432/hermieos';
+  const dbUrl = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@127.0.0.1:15432/hermieos';
   const { status, stderr } = docker([
     'run',
     '-d',

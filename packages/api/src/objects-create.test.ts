@@ -5,7 +5,7 @@ import { createDatabase, closeDatabase } from '@hermieos/db';
 import type { FastifyInstance } from 'fastify';
 import { randomBytes } from 'node:crypto';
 
-const URL = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+const URL = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos';
 let db: ReturnType<typeof createDatabase>;
 
 async function signup(): Promise<{ userId: string; cookie: string }> {

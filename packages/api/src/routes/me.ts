@@ -64,7 +64,7 @@ export async function registerMeRoutes(app: FastifyInstance): Promise<void> {
     // available, otherwise fall back to the API's own public origin (which
     // would only work when Hermes is reverse-proxied under the API).
     const fromEnv = process.env.HERMES_PUBLIC_URL?.replace(/\/+$/, '');
-    if (fromEnv) return { baseUrl: fromEnv, token: sharedKey || token };
+    if (fromEnv) return { baseUrl: fromEnv, token: sharedKey || token, gatewayConfigured: true };
     const internal = process.env.HERMES_GATEWAY_URL;
     if (internal) {
       try {
@@ -79,11 +79,20 @@ export async function registerMeRoutes(app: FastifyInstance): Promise<void> {
           req.headers.host ??
           'localhost';
         const hostOnly = hostHeader.split(':')[0] ?? 'localhost';
-        return { baseUrl: `${proto}://${hostOnly}:${u.port || '8642'}`, token: sharedKey || token };
+        return {
+          baseUrl: `${proto}://${hostOnly}:${u.port || '8642'}`,
+          token: sharedKey || token,
+          gatewayConfigured: true,
+        };
       } catch {
-        // fall through
+        // fall through — invalid HERMES_GATEWAY_URL counts as unconfigured
       }
     }
+    // Neither HERMES_PUBLIC_URL nor HERMES_GATEWAY_URL is set: the client
+    // cannot know where the Hermes API server (port 8642, part of
+    // `hermes gateway run`) lives. Report unconfigured so the web client
+    // shows "Hermes gateway not configured" instead of polling our own
+    // origin for /api/sessions forever.
     const proto =
       (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim() ??
       req.protocol;
@@ -92,7 +101,7 @@ export async function registerMeRoutes(app: FastifyInstance): Promise<void> {
       req.headers.host ??
       'localhost';
     const baseUrl = `${proto}://${host}`.replace(/\/+$/, '');
-    return { baseUrl, token: sharedKey || token };
+    return { baseUrl, token: sharedKey || token, gatewayConfigured: false };
   });
 
   // GET /me/push-vapid-key — the server's VAPID public key for Web Push

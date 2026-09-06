@@ -1,8 +1,8 @@
 /**
  * HermieOS full-loop demo.
  *
- * Runs against the local stack: Postgres on :5432, API on :3001, MCP
- * on :3002, scheduler pointed at a fake Hermes on :4100.
+ * Runs against the local stack: Postgres on :15432 (compose host port),
+ * API on :3001, MCP on :3002, scheduler pointed at a fake Hermes on :4100.
  *
  * What it does:
  *   1. Sign up a fresh user
@@ -16,7 +16,7 @@
  * Exits 0 on success, 1 on any failure.
  *
  * Prerequisites:
- *   - Postgres on :5432 (DATABASE_URL or default)
+ *   - Postgres on :15432 (DATABASE_URL or default)
  *   - API on :3001 (start with `pnpm dev:api`)
  *   - The fake-hermes Docker container on :4100
  *     (or: `node packages/scheduler/fake-hermes-docker.js` standalone)
@@ -25,10 +25,13 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { sql as drizzleSql } from 'drizzle-orm';
 import { createDatabase, closeDatabase } from '@hermieos/db';
+import { loadRootEnv } from '@hermieos/domain';
+
+loadRootEnv();
 
 const API = process.env.HERMIEOS_API_URL ?? 'http://127.0.0.1:3001';
 const HERMES = process.env.HERMIEOS_HERMES_URL ?? 'http://127.0.0.1:4100';
-const DB = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+const DB = process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos';
 
 const startedAt = Date.now();
 const t = (label: string): string => {

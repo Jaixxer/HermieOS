@@ -1,5 +1,7 @@
-import 'dotenv/config';
+import { loadRootEnv } from '@hermieos/domain';
 import { closeDatabase, createDatabase } from './index.js';
+
+loadRootEnv();
 
 async function main() {
   const url = process.env.DATABASE_URL;

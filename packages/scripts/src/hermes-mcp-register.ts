@@ -9,8 +9,9 @@
  * and tests the connection before enabling the server.
  *
  * Non-interactive: the CLI prompts on stdin ("requires authentication?",
- * "API key / Bearer token", and on failure "save anyway?") — we drive
- * those prompts with piped answers.
+ * "API key / Bearer token", "Enable all N tools?", and on failure
+ * "save anyway?") — we drive those prompts with piped answers and verify
+ * with `hermes mcp list`.
  *
  * Env:
  *   HERMES_USER_EMAIL  - HermieOS account email (required; the token
@@ -28,9 +29,12 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { eq } from 'drizzle-orm';
 import { createDatabase, closeDatabase, schema } from '@hermieos/db';
+import { loadRootEnv } from '@hermieos/domain';
+
+loadRootEnv();
 
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:15432/hermieos';
 }
 const dbUrl: string = process.env.DATABASE_URL ?? '';
 const email: string = process.env.HERMES_USER_EMAIL ?? '';
@@ -96,11 +100,20 @@ async function main(): Promise<void> {
   // 3. Drive `hermes mcp add hermieos --url <url> --auth header`:
   //      - requires authentication?  -> y
   //      - API key / Bearer token:    -> <token>
+  //      - Enable all N tools?        -> y (otherwise registration cancels)
   //      - save anyway? (on failure)  -> n (don't save a broken entry)
-  const answers = `${overwritePrefix}y\n${token}\nn\n`;
+  // NOTE: older Hermes CLIs do not ask the enable-all question; the extra
+  // `y` is consumed harmlessly as the save-anyway answer only when the
+  // prompt set is shorter — verification below is by `mcp list`, not output.
+  const answers = `${overwritePrefix}y\n${token}\ny\nn\n`;
   const add = runCli(['mcp', 'add', SERVER, '--url', mcpUrl, '--auth', 'header'], answers);
 
-  if (add.ok || (!add.out.includes('Failed to connect') && add.out.includes('Connected'))) {
+  // Verify by re-listing: the CLI prints "Connected" for the connection
+  // test even when the user cancels at the enable-all prompt, so output
+  // matching alone reports success for a server that was never saved.
+  const verify = runCli(['mcp', 'list']);
+  const verified = verify.out.includes(SERVER);
+  if (verified) {
     // eslint-disable-next-line no-console
     console.log(add.out.split('\n').filter((l) => l.trim().length > 0).slice(0, 12).join('\n'));
     // eslint-disable-next-line no-console

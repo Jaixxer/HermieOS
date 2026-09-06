@@ -1,11 +1,15 @@
+import { loadRootEnv } from '@hermieos/domain';
 import { buildApp } from './server.js';
 import { createLogger } from './logger.js';
+
+// Load repo-root .env for `pnpm dev:api` (installer path already exports env).
+loadRootEnv();
 
 const log = createLogger();
 
 // Default DATABASE_URL for local development; production should set it explicitly.
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:15432/hermieos';
 }
 if (!process.env.COOKIE_SECRET) {
   process.env.COOKIE_SECRET = 'dev-only-cookie-secret-change-me';

@@ -9,9 +9,9 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} SSE_POLL_MS=${SSE_POLL_MS:-300} vitest --no-file-parallelism --sequence.concurrent=false",
-    "test:run": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} SSE_POLL_MS=${SSE_POLL_MS:-300} vitest run --no-file-parallelism --sequence.concurrent=false",
-    "e2e": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:5432/hermieos} tsx scripts/phase3-e2e.ts"
+    "test": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:15432/hermieos} SSE_POLL_MS=${SSE_POLL_MS:-300} vitest --no-file-parallelism --sequence.concurrent=false",
+    "test:run": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:15432/hermieos} SSE_POLL_MS=${SSE_POLL_MS:-300} vitest run --no-file-parallelism --sequence.concurrent=false",
+    "e2e": "DATABASE_URL=${DATABASE_URL:-postgres://hermieos:hermieos@localhost:15432/hermieos} tsx scripts/phase3-e2e.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

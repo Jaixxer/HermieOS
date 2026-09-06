@@ -10,6 +10,10 @@
  *   HERMES_GATEWAY_URL  - base URL, default http://127.0.0.1:8642
  *   HERMES_API_KEY      - bearer, default empty
  */
+import { loadRootEnv } from '@hermieos/domain';
+
+loadRootEnv();
+
 const url = `${process.env.HERMES_GATEWAY_URL ?? 'http://127.0.0.1:8642'}/v1/capabilities`;
 const key = process.env.HERMES_API_KEY ?? '';
 

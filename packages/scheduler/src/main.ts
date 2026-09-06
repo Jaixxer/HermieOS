@@ -1,10 +1,14 @@
+import { loadRootEnv } from '@hermieos/domain';
 import { HermesClient } from '@hermieos/gateway';
 import { schedule, tickOnce } from './tick.js';
 import { startRunTracker } from './run-tracker.js';
 import { createLogger } from './logger.js';
 
+// Load repo-root .env for `pnpm dev:scheduler`.
+loadRootEnv();
+
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:15432/hermieos';
 }
 
 const log = createLogger();

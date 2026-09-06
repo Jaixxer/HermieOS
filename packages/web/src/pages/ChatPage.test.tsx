@@ -80,6 +80,7 @@ function renderPage(initial = '/'): React.JSX.Element {
 const sampleHermesInfo = {
   baseUrl: 'http://localhost:8642',
   token: 'mcp_test_token',
+  gatewayConfigured: true,
 };
 
 const sampleSession = {

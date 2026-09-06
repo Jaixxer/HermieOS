@@ -24,7 +24,7 @@ let client: HermesClient;
 
 beforeAll(async () => {
   db = createDatabase({
-    url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos',
+    url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos',
   });
   setDb(db);
   hermes = await makeFakeHermes();
@@ -491,7 +491,7 @@ describe('tickOnce — dry-run and locking', () => {
     // would be called on) actually sees it as held by another session.
     const postgres = (await import('postgres')).default;
     const otherClient = postgres(
-      process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos',
+      process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos',
     );
     try {
       await otherClient`select pg_advisory_lock(91337)`;

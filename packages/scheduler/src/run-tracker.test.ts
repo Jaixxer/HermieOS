@@ -21,7 +21,7 @@ let client: HermesClient;
 
 beforeAll(async () => {
   db = createDatabase({
-    url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:5432/hermieos',
+    url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos',
   });
   setDb(db);
   hermes = await makeFakeHermes();

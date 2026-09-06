@@ -15,9 +15,12 @@ import { createDatabase, closeDatabase, schema } from '@hermieos/db';
 import { createObject } from '@hermieos/mcp/src/data/objects.js';
 import { linkObjects } from '@hermieos/mcp/src/data/relationships.js';
 import { recordFeedback, type FeedbackKind } from '@hermieos/mcp/src/data/feedback.js';
+import { loadRootEnv } from '@hermieos/domain';
+
+loadRootEnv();
 
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:5432/hermieos';
+  process.env.DATABASE_URL = 'postgres://hermieos:hermieos@localhost:15432/hermieos';
 }
 
 const URL = process.env.DATABASE_URL;
