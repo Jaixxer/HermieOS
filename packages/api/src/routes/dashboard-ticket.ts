@@ -29,6 +29,37 @@ interface TicketResponse {
   provider: string;
 }
 
+/**
+ * Rehost a configured loopback URL to the origin the client actually used
+ * to reach this API. When HERMES_DASHBOARD_PUBLIC_URL is localhost/127.0.0.1
+ * (the default single-host setup), a phone on the LAN would otherwise receive
+ * ws://localhost:9119 and try to dial ITSELF. We swap the host for the
+ * X-Forwarded-Host / Host header of the inbound request, preserving scheme
+ * (X-Forwarded-Proto aware) and the configured port.
+ */
+export function rehostForClient(
+  configuredUrl: string,
+  req: { headers: Record<string, string | string[] | undefined>; protocol: string },
+): string {
+  try {
+    const u = new URL(configuredUrl);
+    const host = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(u.hostname) ? null : u.hostname;
+    if (host) return configuredUrl; // explicit public URL — trust it (e.g. subdomains)
+    const proto =
+      (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim() ??
+      req.protocol;
+    const xfh = req.headers['x-forwarded-host'];
+    const hostHeaderRaw: unknown = Array.isArray(xfh) ? xfh[0] : xfh ?? req.headers.host;
+    const hostHeader = typeof hostHeaderRaw === 'string' ? hostHeaderRaw : '';
+    const hostOnly = hostHeader.split(':')[0] || '';
+    if (!hostOnly) return configuredUrl;
+    const port = u.port ? `:${u.port}` : '';
+    return `${proto}://${hostOnly}${port}`;
+  } catch {
+    return configuredUrl;
+  }
+}
+
 export function registerDashboardTicketRoutes(app: FastifyInstance): void {
   // POST /hermes/dashboard-ticket — login once, mint a single-use WS
   // ticket for the TUI gateway control channel.
@@ -38,14 +69,14 @@ export function registerDashboardTicketRoutes(app: FastifyInstance): void {
     }
 
     const baseUrl = (process.env.HERMES_DASHBOARD_URL ?? '').replace(/\/+$/, '');
-    const publicUrl = (process.env.HERMES_DASHBOARD_PUBLIC_URL ?? baseUrl).replace(/\/+$/, '');
+    const configuredPublicUrl = (process.env.HERMES_DASHBOARD_PUBLIC_URL ?? baseUrl).replace(/\/+$/, '');
     const username = process.env.HERMES_DASHBOARD_USERNAME ?? '';
     const password = process.env.HERMES_DASHBOARD_PASSWORD ?? '';
 
-    if (!baseUrl || !publicUrl || !username || !password) {
+    if (!baseUrl || !configuredPublicUrl || !username || !password) {
       const missing = [
         !baseUrl && 'HERMES_DASHBOARD_URL',
-        !publicUrl && 'HERMES_DASHBOARD_PUBLIC_URL',
+        !configuredPublicUrl && 'HERMES_DASHBOARD_PUBLIC_URL',
         !username && 'HERMES_DASHBOARD_USERNAME',
         !password && 'HERMES_DASHBOARD_PASSWORD',
       ]
@@ -59,6 +90,15 @@ export function registerDashboardTicketRoutes(app: FastifyInstance): void {
         String(req.id),
       );
     }
+
+    // The WS URL the BROWSER must dial. HERMES_DASHBOARD_PUBLIC_URL
+    // should be the dashboard origin as seen by the client (e.g.
+    // https://hermes-ws.example.com). When it's left at the loopback
+    // default (localhost/127.0.0.1 — the common single-host setup),
+    // rewrite the host to whatever the client used to reach THIS API,
+    // so a phone on the LAN gets ws://192.168.1.5:9119 instead of
+    // ws://localhost:9119 (which would point at the phone itself).
+    const publicUrl = rehostForClient(configuredPublicUrl, req);
 
     try {
       const ticket = await mintTicket(baseUrl, username, password);
