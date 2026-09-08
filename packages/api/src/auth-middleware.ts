@@ -45,13 +45,11 @@ export async function getSessionUser(req: FastifyRequest): Promise<SessionUser |
     }
   }
 
-  // 3. SSE fallback: EventSource cannot set the Authorization header,
-  // so the web client passes the bearer token as ?token= on /events.
-  const q = req.query as { token?: string };
-  if (q.token) {
-    const user = await resolveBearerToken(req, q.token);
-    if (user) return user;
-  }
+  // (No query-string auth.) The SSE flow previously accepted the MCP
+  // token as `?token=` because EventSource cannot send headers. That put
+  // a permanent credential into URLs (logs, history, proxies). It now
+  // uses short-lived single-use tickets minted via POST /events/ticket;
+  // see sse-tickets.ts. Query-string auth is intentionally gone.
 
   return null;
 }

@@ -938,9 +938,15 @@ export const api = {
   },
 };
 
-export function sseUrl(): string {
-  // EventSource cannot send the Authorization header, so we pass the
-  // bearer token as a query param for SSE auth (see /events route).
-  const q = _token ? `?token=${encodeURIComponent(_token)}` : '';
-  return `${_base}/events${q}`;
+export function sseUrl(ticket: string): string {
+  // EventSource cannot send the Authorization header or use cookies
+  // reliably across origins, so we authenticate with a short-lived,
+  // single-use ticket minted via POST /events/ticket. The permanent
+  // MCP token is never placed in a URL (logs/history/proxy exposure).
+  return `${_base}/events?ticket=${encodeURIComponent(ticket)}`;
+}
+
+/** Mint a short-lived single-use SSE ticket. */
+export async function mintSseTicket(): Promise<{ ticket: string; ttlSeconds: number }> {
+  return request('/events/ticket', { method: 'POST' });
 }

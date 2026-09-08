@@ -39,7 +39,7 @@ async function signup(
 
 beforeAll(async () => {
   db = createDatabase({
-    url: process.env.DATABASE_URL ?? 'postgres://hermieos:hermieos@localhost:15432/hermieos',
+    url: process.env.DATABASE_URL ?? 'postgres://hermieos:***@localhost:15432/hermieos',
   });
   setDb(db);
   app = await buildApp();
@@ -235,16 +235,46 @@ describe('GET /events (SSE)', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('opens an SSE stream for an authenticated user', async () => {
-    // The stream is intentionally long-lived, so `app.inject()` would
-    // wait forever. Use a real HTTP request, verify SSE headers and the
-    // initial `connected` event, then close the socket.
+  it('rejects a raw MCP token in the query string (security)', async () => {
+    const [row] = await db
+      .select({ mcpToken: schema.users.mcpToken })
+      .from(schema.users)
+      .where(sql`${schema.users.email} = 'alice@api-test.local'`);
+    if (!row) throw new Error('alice missing');
+
     const address = await app.listen({ port: 0, host: '127.0.0.1' });
     try {
       const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
         const req = http.get(
-          `${address}/events`,
-          { headers: { accept: 'text/event-stream', cookie: aliceCookie } },
+          `${address}/events?token=${encodeURIComponent(row.mcpToken!)}`,
+          { headers: { accept: 'text/event-stream' } },
+          (res) => resolve(res),
+        );
+        req.on('error', reject);
+      });
+      expect(response.statusCode).toBe(401);
+      response.destroy();
+    } finally {
+      await app.close();
+      app = await buildApp();
+    }
+  });
+
+  it('mints a ticket then opens an SSE stream via ?ticket=', async () => {
+    const mint = await app.inject({
+      method: 'POST',
+      url: '/events/ticket',
+      headers: { cookie: aliceCookie },
+    });
+    expect(mint.statusCode).toBe(200);
+    const { ticket } = mint.json() as { ticket: string; ttlSeconds: number };
+
+    const address = await app.listen({ port: 0, host: '127.0.0.1' });
+    try {
+      const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        const req = http.get(
+          `${address}/events?ticket=${encodeURIComponent(ticket)}`,
+          { headers: { accept: 'text/event-stream' } },
           (res) => resolve(res),
         );
         req.on('error', reject);
@@ -270,40 +300,12 @@ describe('GET /events (SSE)', () => {
     }
   });
 
-  it('opens an SSE stream authenticated via ?token= (Electron path)', async () => {
-    // EventSource can't send the Authorization header, so the desktop
-    // client passes the bearer (MCP) token as a query param.
-    const [row] = await db
-      .select({ mcpToken: schema.users.mcpToken })
-      .from(schema.users)
-      .where(sql`${schema.users.email} = 'alice@api-test.local'`);
-    if (!row) throw new Error('alice missing');
-
+  it('rejects an SSE stream with a bogus ?ticket=', async () => {
     const address = await app.listen({ port: 0, host: '127.0.0.1' });
     try {
       const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
         const req = http.get(
-          `${address}/events?token=${encodeURIComponent(row.mcpToken)}`,
-          { headers: { accept: 'text/event-stream' } },
-          (res) => resolve(res),
-        );
-        req.on('error', reject);
-      });
-      expect(response.statusCode).toBe(200);
-      expect(response.headers['content-type']).toContain('text/event-stream');
-      response.destroy();
-    } finally {
-      await app.close();
-      app = await buildApp();
-    }
-  });
-
-  it('rejects an SSE stream with a bogus ?token=', async () => {
-    const address = await app.listen({ port: 0, host: '127.0.0.1' });
-    try {
-      const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
-        const req = http.get(
-          `${address}/events?token=bogus`,
+          `${address}/events?ticket=bogus`,
           { headers: { accept: 'text/event-stream' } },
           (res) => resolve(res),
         );
