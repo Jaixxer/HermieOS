@@ -74,7 +74,7 @@ describe('GET /me/hermes-info', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns baseUrl + mcpToken when authenticated', async () => {
+  it('returns baseUrl + bearer token when authenticated', async () => {
     const signup = await inject('POST', '/auth/signup', {
       body: {
         email: 'mert@hermes-info-test.local',
@@ -90,8 +90,18 @@ describe('GET /me/hermes-info', () => {
     expect(typeof info.body.baseUrl).toBe('string');
     expect((info.body.baseUrl as string).length).toBeGreaterThan(0);
     expect(typeof info.body.token).toBe('string');
-    expect((info.body.token as string).startsWith('mcp_')).toBe(true);
-    expect(typeof info.body.gatewayConfigured).toBe('boolean');
+    expect((info.body.token as string).length).toBeGreaterThan(0);
+    const sharedKey = process.env.HERMES_API_KEY ?? process.env.HERMES_GATEWAY_KEY ?? '';
+    // When a shared gateway key is configured, the route exposes THAT key
+    // (the gateway has no per-user identity; the browser needs the shared
+    // key to call /api/sessions). Otherwise it falls back to the MCP token.
+    if (sharedKey) {
+      expect(info.body.token).toBe(sharedKey);
+      expect(info.body.gatewayConfigured).toBe(true);
+    } else {
+      expect((info.body.token as string).startsWith('mcp_')).toBe(true);
+      expect(typeof info.body.gatewayConfigured).toBe('boolean');
+    }
   });
 
   it('rejects an invalid session cookie', async () => {
