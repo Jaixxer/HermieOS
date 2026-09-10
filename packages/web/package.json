@@ -28,6 +28,7 @@
     "appId": "com.hermieos.app",
     "productName": "HermieOS",
     "executableName": "hermieos",
+    "npmRebuild": false,
     "directories": {
       "output": "electron-dist"
     },

@@ -14,7 +14,7 @@ import {
   Save,
   ExternalLink,
 } from 'lucide-react';
-import { api, getApiBase, type CalendarEvent } from '../api';
+import { api, getApiBase, type CalendarEvent, type Task, type Upcoming } from '../api';
 import { cn } from '../lib/utils';
 import { Sheet } from '../components/ui/sheet';
 import { mediaMatches } from '../mobile';
@@ -26,6 +26,17 @@ import { mediaMatches } from '../mobile';
  */
 
 type View = 'month' | 'week' | 'day';
+
+/** A calendar day can show Google events, mission tasks, and upcoming items. */
+interface ScheduleItem {
+  kind: 'event' | 'task' | 'upcoming';
+  id: string;
+  title: string;
+  date: Date;
+  event?: CalendarEvent;
+  task?: Task;
+  upcoming?: Upcoming;
+}
 
 function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -66,9 +77,9 @@ const inputCls =
 
 export function CalendarPage(): React.JSX.Element {
   const qc = useQueryClient();
-  const [view, setView] = React.useState<View>(() =>
-    mediaMatches('(max-width: 639px)') ? 'day' : 'month',
-  );
+  // Always start on the full month grid — even on phones — so the whole
+  // schedule is visible by default. Day/week remain one tap away.
+  const [view, setView] = React.useState<View>('month');
   const [cursor, setCursor] = React.useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = React.useState<Date>(new Date());
   const [showEventModal, setShowEventModal] = React.useState(false);
@@ -101,6 +112,21 @@ export function CalendarPage(): React.JSX.Element {
     staleTime: 30_000,
   });
 
+  // Tasks + upcoming items — the mission items that should appear on the
+  // schedule alongside Google Calendar events. Fetched without a date window
+  // (the web API has no server-side range filter for tasks) and filtered
+  // client-side to the current view range.
+  const calendarTasks = useQuery({
+    queryKey: ['calendar', 'tasks'],
+    queryFn: () => api.listTasks({ limit: 200 }),
+    staleTime: 30_000,
+  });
+  const calendarUpcoming = useQuery({
+    queryKey: ['calendar', 'upcoming'],
+    queryFn: () => api.listUpcoming({ days: 120, limit: 100 }),
+    staleTime: 30_000,
+  });
+
   async function syncNow(): Promise<void> {
     await api.calendarSync({
       from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -110,14 +136,19 @@ export function CalendarPage(): React.JSX.Element {
   }
 
   const eventsOnDay = React.useCallback(
-    (d: Date) => {
-      const all = events.data?.events ?? [];
-      return all.filter((e) => {
-        const start = new Date(e.startsAt);
-        return isSameDay(start, d);
-      });
+    (d: Date): ScheduleItem[] => {
+      const evs: ScheduleItem[] = (events.data?.events ?? [])
+        .filter((e) => isSameDay(new Date(e.startsAt), d))
+        .map((e) => ({ kind: 'event' as const, id: e.id, title: e.title, date: new Date(e.startsAt), event: e }));
+      const tasks: ScheduleItem[] = (calendarTasks.data?.tasks ?? [])
+        .filter((t) => t.status !== 'done' && t.status !== 'cancelled' && !!t.dueAt && isSameDay(new Date(t.dueAt), d))
+        .map((t) => ({ kind: 'task' as const, id: t.id, title: t.title, date: new Date(t.dueAt!), task: t }));
+      const upcoming: ScheduleItem[] = (calendarUpcoming.data?.items ?? [])
+        .filter((u) => !u.completedAt && isSameDay(new Date(u.occursAt), d))
+        .map((u) => ({ kind: 'upcoming' as const, id: u.id, title: u.title, date: new Date(u.occursAt), upcoming: u }));
+      return [...evs, ...tasks, ...upcoming].sort((a, b) => a.date.getTime() - b.date.getTime());
     },
-    [events.data],
+    [events.data, calendarTasks.data, calendarUpcoming.data],
   );
 
   function navigate(direction: number): void {
@@ -131,6 +162,15 @@ export function CalendarPage(): React.JSX.Element {
     const t = new Date();
     setCursor(t);
     setSelectedDate(t);
+  }
+  /** Events open the edit modal; tasks + upcoming select the day. */
+  function openItem(item: ScheduleItem): void {
+    if (item.kind === 'event' && item.event) {
+      setEditingEvent(item.event);
+      setShowEventModal(true);
+    } else {
+      setSelectedDate(item.date);
+    }
   }
 
   return (
@@ -192,28 +232,19 @@ export function CalendarPage(): React.JSX.Element {
               selected={selectedDate}
               onSelect={setSelectedDate}
               eventsOnDay={eventsOnDay}
-              onEventClick={(ev) => {
-                setEditingEvent(ev);
-                setShowEventModal(true);
-              }}
+              onEventClick={openItem}
             />
           ) : view === 'week' ? (
             <WeekGrid
               cursor={cursor}
               eventsOnDay={eventsOnDay}
-              onEventClick={(ev) => {
-                setEditingEvent(ev);
-                setShowEventModal(true);
-              }}
+              onEventClick={openItem}
             />
           ) : (
             <DayList
               cursor={cursor}
               eventsOnDay={eventsOnDay}
-              onEventClick={(ev) => {
-                setEditingEvent(ev);
-                setShowEventModal(true);
-              }}
+              onEventClick={openItem}
             />
           )}
         </div>
@@ -417,7 +448,14 @@ function GoogleConnectButton({
 // Event chip (shared by month + week views)
 // ============================================================================
 
-function EventChip({ ev, onClick }: { ev: CalendarEvent; onClick: () => void }): React.JSX.Element {
+function EventChip({ item, onClick, compact }: { item: ScheduleItem; onClick: () => void; compact?: boolean }): React.JSX.Element {
+  const isEvent = item.kind === 'event';
+  const badge = item.kind === 'event' ? null : item.kind === 'task' ? 'TASK' : 'GOAL';
+  const borderCls = isEvent
+    ? 'border-accent bg-accent/10 hover:bg-accent/25'
+    : item.kind === 'task'
+      ? 'border-amber-500 bg-amber-500/10 hover:bg-amber-500/25'
+      : 'border-purple-500 bg-purple-500/10 hover:bg-purple-500/25';
   return (
     <button
       type="button"
@@ -425,12 +463,23 @@ function EventChip({ ev, onClick }: { ev: CalendarEvent; onClick: () => void }):
         e.stopPropagation();
         onClick();
       }}
-      className="w-full cursor-pointer border-l-2 border-accent bg-accent/10 px-1.5 py-0.5 text-left transition hover:bg-accent/25"
+      className={`w-full cursor-pointer border-l-2 px-1.5 py-0.5 text-left transition ${borderCls} ${compact ? 'space-y-0' : ''}`}
     >
-      <div className="truncate text-[10px] font-bold text-p5-dark">{ev.title}</div>
-      {!ev.allDay ? (
+      <div className="flex items-center gap-1.5">
+        {badge ? (
+          <span
+            className={`shrink-0 font-mono text-[8px] font-black tracking-wide ${
+              item.kind === 'task' ? 'text-amber-600' : 'text-purple-600'
+            } ${compact ? 'hidden sm:inline' : ''}`}
+          >
+            {badge}
+          </span>
+        ) : null}
+        <span className="truncate text-[10px] font-bold text-p5-dark">{item.title}</span>
+      </div>
+      {!compact && isEvent && item.event && !item.event.allDay ? (
         <div className="font-mono text-[9px] text-p5-dark-muted">
-          {timeOf(ev.startsAt)}–{timeOf(ev.endsAt)}
+          {timeOf(item.event.startsAt)}–{timeOf(item.event.endsAt)}
         </div>
       ) : null}
     </button>
@@ -451,8 +500,8 @@ function MonthGrid({
   cursor: Date;
   selected: Date;
   onSelect: (d: Date) => void;
-  eventsOnDay: (d: Date) => CalendarEvent[];
-  onEventClick: (e: CalendarEvent) => void;
+  eventsOnDay: (d: Date) => ScheduleItem[];
+  onEventClick: (e: ScheduleItem) => void;
 }): React.JSX.Element {
   const gridStart = startOfWeek(startOfMonth(cursor));
   const days: Date[] = [];
@@ -475,13 +524,18 @@ function MonthGrid({
           const isToday = isSameDay(day, today);
           const isSelected = isSameDay(day, selected);
           const dayEvents = eventsOnDay(day);
+          const visible = dayEvents.slice(0, 3);
+          const overflow = dayEvents.length - visible.length;
+          const taskCount = dayEvents.filter((i) => i.kind === 'task').length;
+          const goalCount = dayEvents.filter((i) => i.kind === 'upcoming').length;
+          const eventCount = dayEvents.filter((i) => i.kind === 'event').length;
           return (
             <button
               key={day.toISOString()}
               type="button"
               onClick={() => onSelect(day)}
               className={cn(
-                'flex h-[104px] flex-col gap-0.5 border-b border-r border-black/[0.06] p-1.5 text-left transition',
+                'flex h-[88px] sm:h-[104px] flex-col gap-0.5 border-b border-r border-black/[0.06] p-1 sm:p-1.5 text-left transition',
                 'hover:bg-black/[0.03]',
                 !inMonth && 'opacity-40',
                 isSelected && 'bg-accent/5',
@@ -497,16 +551,29 @@ function MonthGrid({
               >
                 {day.getDate()}
               </span>
-              <div className="mt-0.5 min-h-0 flex-1 space-y-0.5 overflow-hidden">
-                {dayEvents.slice(0, 3).map((ev) => (
-                  <EventChip key={ev.id} ev={ev} onClick={() => onEventClick(ev)} />
-                ))}
-                {dayEvents.length > 3 ? (
-                  <div className="px-1 font-mono text-[9px] text-p5-dark-muted">
-                    +{dayEvents.length - 3} MORE
-                  </div>
-                ) : null}
-              </div>
+              {/* Mobile: quiet colored dots — full grid fits the screen, nothing
+                  looks crammed. Tap the day for the full list. */}
+              {dayEvents.length > 0 ? (
+                <div className="mt-0.5 flex flex-wrap items-center gap-1 pl-0.5 sm:hidden">
+                  {taskCount > 0 ? <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title={`${taskCount} task${taskCount === 1 ? '' : 's'}`} /> : null}
+                  {goalCount > 0 ? <span className="h-1.5 w-1.5 rounded-full bg-purple-500" title={`${goalCount} goal${goalCount === 1 ? '' : 's'}`} /> : null}
+                  {eventCount > 0 ? <span className="h-1.5 w-1.5 rounded-full bg-accent" title={`${eventCount} event${eventCount === 1 ? '' : 's'}`} /> : null}
+                  <span className="ml-0.5 font-mono text-[8px] text-p5-dark-muted">{dayEvents.length}</span>
+                </div>
+              ) : null}
+              {/* Desktop: readable chips. */}
+              {visible.length > 0 ? (
+                <div className="mt-0.5 hidden min-h-0 flex-1 space-y-0.5 overflow-hidden sm:block">
+                  {visible.map((item) => (
+                    <EventChip key={`${item.kind}-${item.id}`} item={item} compact onClick={() => onEventClick(item)} />
+                  ))}
+                  {overflow > 0 ? (
+                    <div className="px-1 font-mono text-[9px] text-p5-dark-muted">
+                      +{overflow} MORE
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </button>
           );
         })}
@@ -525,8 +592,8 @@ function WeekGrid({
   onEventClick,
 }: {
   cursor: Date;
-  eventsOnDay: (d: Date) => CalendarEvent[];
-  onEventClick: (e: CalendarEvent) => void;
+  eventsOnDay: (d: Date) => ScheduleItem[];
+  onEventClick: (e: ScheduleItem) => void;
 }): React.JSX.Element {
   const start = startOfWeek(cursor);
   const days: Date[] = [];
@@ -537,34 +604,34 @@ function WeekGrid({
   }
   const today = new Date();
   return (
-    <div className="grid grid-cols-7 gap-3">
-      {days.map((day) => {
-        const dayEvents = eventsOnDay(day).sort(
-          (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
-        );
-        const isToday = isSameDay(day, today);
-        return (
-          <div key={day.toISOString()} className="flex min-h-[320px] flex-col border-2 border-black/15 bg-p5-panel">
-            <div className={cn('flex items-baseline gap-1.5 border-b-2 border-black/10 px-3 py-2', isToday && 'bg-accent text-white')}>
-              <span className="text-[12px] font-black tracking-[0.1em] uppercase">
-                {day.toLocaleDateString(undefined, { weekday: 'short' })}
-              </span>
-              <span className={cn('font-mono text-[13px] font-bold', isToday ? 'text-white/80' : 'text-p5-dark-muted')}>
-                {day.getDate()}
-              </span>
-            </div>
-            <div className="flex-1 space-y-1 p-2">
-              {dayEvents.length === 0 ? (
-                <div className="px-1 py-2 text-center font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted">CLEAR</div>
-              ) : (
-                dayEvents.map((ev) => (
-                  <EventChip key={ev.id} ev={ev} onClick={() => onEventClick(ev)} />
-                ))
-              )}
+    <div className="overflow-x-auto">
+      <div className="grid min-w-[1120px] grid-cols-7 gap-3 sm:min-w-0">
+        {days.map((day) => {
+          const dayEvents = eventsOnDay(day);
+          const isToday = isSameDay(day, today);
+          return (
+            <div key={day.toISOString()} className="flex min-h-[320px] flex-col border-2 border-black/15 bg-p5-panel">
+              <div className={cn('flex items-baseline gap-1.5 border-b-2 border-black/10 px-3 py-2', isToday && 'bg-accent text-white')}>
+                <span className="text-[12px] font-black tracking-[0.1em] uppercase">
+                  {day.toLocaleDateString(undefined, { weekday: 'short' })}
+                </span>
+                <span className={cn('font-mono text-[13px] font-bold', isToday ? 'text-white/80' : 'text-p5-dark-muted')}>
+                  {day.getDate()}
+                </span>
+              </div>
+              <div className="flex-1 space-y-1 p-2">
+                {dayEvents.length === 0 ? (
+                  <div className="px-1 py-2 text-center font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted">CLEAR</div>
+                ) : (
+                  dayEvents.map((item) => (
+                    <EventChip key={`${item.kind}-${item.id}`} item={item} onClick={() => onEventClick(item)} />
+                  ))
+                )}
             </div>
           </div>
         );
       })}
+    </div>
     </div>
   );
 }
@@ -579,12 +646,10 @@ function DayList({
   onEventClick,
 }: {
   cursor: Date;
-  eventsOnDay: (d: Date) => CalendarEvent[];
-  onEventClick: (e: CalendarEvent) => void;
+  eventsOnDay: (d: Date) => ScheduleItem[];
+  onEventClick: (e: ScheduleItem) => void;
 }): React.JSX.Element {
-  const dayEvents = eventsOnDay(cursor).sort(
-    (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
-  );
+  const dayEvents = eventsOnDay(cursor);
   return (
     <div className="overflow-hidden border-2 border-black/15 bg-p5-panel">
       <div className="border-b-2 border-black/10 px-5 py-4">
@@ -600,36 +665,65 @@ function DayList({
           </div>
         ) : (
           <div className="space-y-3">
-            {dayEvents.map((ev) => (
+            {dayEvents.map((item) => (
               <div
-                key={ev.id}
-                onClick={() => onEventClick(ev)}
+                key={`${item.kind}-${item.id}`}
+                onClick={() => onEventClick(item)}
                 className="flex cursor-pointer items-start gap-4 border border-black/15 p-4 transition hover:border-accent"
               >
+                ${
+                  /* Keep the time column identical for events; tasks + upcoming show a kind glyph. */
+                  ''
+                }
                 <div className="w-20 shrink-0 border-r border-black/10 pr-3 text-right font-mono text-[12px] leading-snug text-p5-dark-muted">
-                  {ev.allDay ? (
-                    'ALL DAY'
+                  {item.kind === 'event' && item.event ? (
+                    item.event.allDay ? (
+                      'ALL DAY'
+                    ) : (
+                      <>
+                        {timeOf(item.event.startsAt)}
+                        <div className="text-p5-dark-muted/70">– {timeOf(item.event.endsAt)}</div>
+                      </>
+                    )
                   ) : (
-                    <>
-                      {timeOf(ev.startsAt)}
-                      <div className="text-p5-dark-muted/70">– {timeOf(ev.endsAt)}</div>
-                    </>
+                    item.kind === 'task' ? 'TASK' : 'GOAL'
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[16px] font-black tracking-tight text-p5-dark">{ev.title}</div>
-                  {ev.description ? (
-                    <div className="mt-1 line-clamp-2 text-[12px] text-p5-dark-muted">{ev.description}</div>
-                  ) : null}
-                  {ev.location ? (
-                    <div className="mt-1.5 flex items-center gap-1 font-mono text-[11px] text-p5-dark-muted">
-                      <MapPin className="h-3 w-3" /> {ev.location}
-                    </div>
-                  ) : null}
-                  {ev.attendees.length > 0 ? (
-                    <div className="mt-1 flex items-center gap-1 font-mono text-[11px] text-p5-dark-muted">
-                      <Users className="h-3 w-3" /> {ev.attendees.length} attendee{ev.attendees.length !== 1 ? 's' : ''}
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`shrink-0 px-1.5 py-0.5 font-mono text-[9px] font-black tracking-wide ${
+                        item.kind === 'task'
+                          ? 'bg-amber-500/15 text-amber-600'
+                          : item.kind === 'upcoming'
+                            ? 'bg-purple-500/15 text-purple-600'
+                            : 'bg-accent/15 text-accent'
+                      }`}
+                    >
+                      {item.kind.toUpperCase()}
+                    </span>
+                    <span className="text-[16px] font-black tracking-tight text-p5-dark">{item.title}</span>
+                  </div>
+                  {item.kind === 'event' ? (
+                    <>
+                      {item.event!.description ? (
+                        <div className="mt-1 line-clamp-2 text-[12px] text-p5-dark-muted">{item.event!.description}</div>
+                      ) : null}
+                      {item.event!.location ? (
+                        <div className="mt-1.5 flex items-center gap-1 font-mono text-[11px] text-p5-dark-muted">
+                          <MapPin className="h-3 w-3" /> {item.event!.location}
+                        </div>
+                      ) : null}
+                      {item.event!.attendees.length > 0 ? (
+                        <div className="mt-1 flex items-center gap-1 font-mono text-[11px] text-p5-dark-muted">
+                          <Users className="h-3 w-3" /> {item.event!.attendees.length} attendee{item.event!.attendees.length !== 1 ? 's' : ''}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : item.kind === 'task' && item.task?.notes ? (
+                    <div className="mt-1 line-clamp-2 text-[12px] text-p5-dark-muted">{item.task.notes}</div>
+                  ) : item.kind === 'upcoming' && item.upcoming?.subtitle ? (
+                    <div className="mt-1 text-[12px] text-p5-dark-muted">{item.upcoming.subtitle}</div>
                   ) : null}
                 </div>
               </div>

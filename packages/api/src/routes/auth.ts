@@ -15,6 +15,11 @@ import { BadRequest, Conflict, Unauthorized, sendError } from '../errors.js';
 
 export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/signup', async (req, reply) => {
+    // Signup is disabled server-side for now. No new accounts can be created
+    // until SIGNUP_ENABLED=true is set in the environment.
+    if (process.env.SIGNUP_ENABLED !== 'true') {
+      return reply.code(403).send({ error: 'signup_disabled' });
+    }
     const parsed = signupArgsSchema.safeParse(req.body);
     if (!parsed.success) {
       return sendError(reply, new BadRequest('invalid_input', parsed.error.flatten()), String(req.id));

@@ -20,7 +20,7 @@ vi.mock('../server', async () => {
 });
 
 import { MissionPage } from './MissionPage';
-import { api, type Task, type TaskAnalytics } from '../api';
+import { api, type Task, type TaskAnalytics, type DashboardData } from '../api';
 import { AuthProvider } from '../auth';
 
 function makeQueryClient(): QueryClient {
@@ -73,6 +73,17 @@ function makeAnalytics(overrides: Partial<TaskAnalytics> = {}): TaskAnalytics {
   };
 }
 
+function makeDash(tasks: Task[] = [], overdue: Task[] = []): DashboardData {
+  return {
+    tasks: { today: tasks, overdue, completedThisWeek: 0 },
+    upcoming: { next7Days: [], next30Days: [], next90Days: [] },
+    opportunities: { categories: [], recent: [] },
+    hermesFeed: { events: [], hasMore: false },
+    graph: { nodes: [], links: [] },
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 function renderPage(): ReturnType<typeof render> {
   const qc = makeQueryClient();
   return render(
@@ -89,7 +100,7 @@ function renderPage(): ReturnType<typeof render> {
 describe('MissionPage', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.spyOn(api, 'listTasks').mockResolvedValue({ tasks: [], hasMore: false });
+    vi.spyOn(api, 'dashboard').mockResolvedValue(makeDash());
     vi.spyOn(api, 'taskAnalytics').mockResolvedValue(makeAnalytics());
   });
 
@@ -102,10 +113,9 @@ describe('MissionPage', () => {
   });
 
   it('shows tasks from the API', async () => {
-    vi.spyOn(api, 'listTasks').mockResolvedValue({
-      tasks: [makeTask({ title: 'Write the report' }), makeTask({ id: 't-2', title: 'Go for a run', category: 'health' })],
-      hasMore: false,
-    });
+    vi.spyOn(api, 'dashboard').mockResolvedValue(
+      makeDash([makeTask({ title: 'Write the report' }), makeTask({ id: 't-2', title: 'Go for a run', category: 'health' })]),
+    );
     renderPage();
     expect(await screen.findByText('Write the report')).toBeInTheDocument();
     expect(screen.getByText('Go for a run')).toBeInTheDocument();
@@ -113,7 +123,7 @@ describe('MissionPage', () => {
 
   it('marks a task done on toggle', async () => {
     const user = userEvent.setup();
-    vi.spyOn(api, 'listTasks').mockResolvedValue({ tasks: [makeTask()], hasMore: false });
+    vi.spyOn(api, 'dashboard').mockResolvedValue(makeDash([makeTask()]));
     const updateSpy = vi.spyOn(api, 'updateTask').mockResolvedValue({ task: makeTask({ status: 'done' }) });
     vi.spyOn(api, 'archiveTask').mockResolvedValue({ archived: true });
 
@@ -127,7 +137,7 @@ describe('MissionPage', () => {
 
   it('defer-to-tomorrow sets dueAt to tomorrow end-of-day', async () => {
     const user = userEvent.setup();
-    vi.spyOn(api, 'listTasks').mockResolvedValue({ tasks: [makeTask()], hasMore: false });
+    vi.spyOn(api, 'dashboard').mockResolvedValue(makeDash([makeTask()]));
     const updateSpy = vi.spyOn(api, 'updateTask').mockResolvedValue({ task: makeTask() });
     vi.spyOn(api, 'archiveTask').mockResolvedValue({ archived: true });
 
@@ -149,7 +159,7 @@ describe('MissionPage', () => {
 
   it('delegates a task to Hermes with context from the dialog', async () => {
     const user = userEvent.setup();
-    vi.spyOn(api, 'listTasks').mockResolvedValue({ tasks: [makeTask()], hasMore: false });
+    vi.spyOn(api, 'dashboard').mockResolvedValue(makeDash([makeTask()]));
     const delegateSpy = vi.spyOn(api, 'delegateTask').mockResolvedValue({ sessionId: 'task-t-1', delegated: true });
 
     renderPage();
@@ -170,7 +180,7 @@ describe('MissionPage', () => {
 
   it('delegates without context when the box is left empty', async () => {
     const user = userEvent.setup();
-    vi.spyOn(api, 'listTasks').mockResolvedValue({ tasks: [makeTask()], hasMore: false });
+    vi.spyOn(api, 'dashboard').mockResolvedValue(makeDash([makeTask()]));
     const delegateSpy = vi.spyOn(api, 'delegateTask').mockResolvedValue({ sessionId: 'task-t-1', delegated: true });
 
     renderPage();
@@ -183,10 +193,9 @@ describe('MissionPage', () => {
   });
 
   it('shows the delegated state and a link to the conversation once sent', async () => {
-    vi.spyOn(api, 'listTasks').mockResolvedValue({
-      tasks: [makeTask({ sentToHermesAt: new Date().toISOString() })],
-      hasMore: false,
-    });
+    vi.spyOn(api, 'dashboard').mockResolvedValue(
+      makeDash([makeTask({ sentToHermesAt: new Date().toISOString() })]),
+    );
     renderPage();
     expect(await screen.findByText('Delegated to Hermes')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: 'Open Hermes conversation' });

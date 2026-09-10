@@ -415,7 +415,10 @@ export function MissionPage(): React.JSX.Element {
 
   const tasksQ = useQuery({
     queryKey: ['tasks', 'mission'],
-    queryFn: () => api.listTasks({ limit: 100 }),
+    // The backend defines "today" as in-progress + created today/overdue
+    // (dashboard.ts: createdAt-bucketed). Reuse that bucket so the mission
+    // board matches what the dashboard reports instead of a local dueAt filter.
+    queryFn: () => api.dashboard(),
     enabled: connected,
     refetchInterval: 60_000,
   });
@@ -470,12 +473,16 @@ export function MissionPage(): React.JSX.Element {
     );
   };
 
-  const all = tasksQ.data?.tasks ?? [];
-  const todayTasks = all.filter((t) => !t.dueAt || startOfDay(new Date(t.dueAt)).getTime() <= startOfDay(new Date()).getTime());
-  const overdueTasks = todayTasks.filter(
-    (t) => t.dueAt && startOfDay(new Date(t.dueAt)).getTime() < startOfDay(new Date()).getTime() && t.status !== 'done',
+  const dash = tasksQ.data;
+  const todayFromDash = dash?.tasks.today ?? [];
+  const overdueFromDash = dash?.tasks.overdue ?? [];
+  // Merge today + overdue from the backend dashboard, dedupe by id,
+  // keep a stable order (already sorted by priority/dueAt server-side).
+  const all = [...todayFromDash, ...overdueFromDash].filter(
+    (t, i, arr) => arr.findIndex((x) => x.id === t.id) === i,
   );
-  const listed = showOverdue ? todayTasks : todayTasks.filter((t) => !overdueTasks.includes(t));
+  const listed = showOverdue ? all : todayFromDash;
+  const overdueTasks = overdueFromDash;
 
   const analytics: TaskAnalytics | undefined = analyticsQ.data;
   const completedCount = analytics?.today.completed ?? 0;
