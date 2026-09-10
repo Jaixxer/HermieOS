@@ -40,6 +40,10 @@ export function gwMapSet(storedId: string, gwSessionId: string): void {
 export interface GatewayControl {
   status: GatewayStatus;
   gw: TuiGateway | null;
+  /** Last ticket/WS failure detail (e.g. the dashboard-ticket 503 stage),
+   *  or null when never attempted / connected. Rendered in chat so a dead
+   *  steer/interrupt channel says WHY instead of failing silently. */
+  ticketError: string | null;
   /** ChatView registers its event handler here (single listener). */
   registerListener: (cb: (ev: GatewayEventLike) => void) => void;
   /** Create a gateway session, optionally seeded with prior history. */
@@ -57,12 +61,14 @@ export interface GatewayControl {
 
 export function useGatewayControl(): GatewayControl {
   const [status, setStatus] = React.useState<GatewayStatus>('off');
+  const [ticketError, setTicketError] = React.useState<string | null>(null);
   const gwRef = React.useRef<TuiGateway | null>(null);
   const listenerRef = React.useRef<((ev: GatewayEventLike) => void) | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
     void (async () => {
+      setStatus('connecting');
       try {
         const { wsUrl, ticket } = await api.dashboardTicket();
         const g = new TuiGateway();
@@ -71,9 +77,18 @@ export function useGatewayControl(): GatewayControl {
           listenerRef.current?.(ev);
         });
         await g.connect(`${wsUrl}?ticket=${encodeURIComponent(ticket)}`);
-        if (!cancelled) setStatus('on');
-      } catch {
-        if (!cancelled) setStatus('off');
+        if (!cancelled) {
+          setStatus('on');
+          setTicketError(null);
+        }
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        // eslint-disable-next-line no-console
+        console.warn('[gateway] TUI channel unavailable:', detail);
+        if (!cancelled) {
+          setStatus('off');
+          setTicketError(detail);
+        }
       }
     })();
     return () => {
@@ -111,5 +126,5 @@ export function useGatewayControl(): GatewayControl {
     return { gwSessionId: res.session_id, storedId, messageCount: res.message_count ?? 0 };
   }, []);
 
-  return { status, gw: gwRef.current, registerListener, createGatewaySession, resumeGatewaySession };
+  return { status, gw: gwRef.current, ticketError, registerListener, createGatewaySession, resumeGatewaySession };
 }

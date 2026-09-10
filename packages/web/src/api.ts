@@ -932,7 +932,21 @@ export const api = {
       credentials: _token ? 'same-origin' : 'include',
       headers: _token ? { authorization: `Bearer ${_token}` } : {},
     });
-    if (!res.ok) throw new ApiError(res.status, null, `HTTP ${res.status}`);
+    if (!res.ok) {
+      // The API's 503 body carries the failure stage
+      // (stage=config/unreachable/login/ticket) — surface it instead of
+      // a bare status so the UI (and console) says WHY steering is off.
+      let body: unknown = null;
+      try {
+        body = await res.json();
+      } catch {
+        body = await res.text().catch(() => null);
+      }
+      const message = (body && typeof body === 'object' && 'message' in body
+        ? String((body as { message: unknown }).message)
+        : `HTTP ${res.status}`);
+      throw new ApiError(res.status, body, message);
+    }
     const data = (await res.json()) as { wsUrl: string; ticket: string; provider: string };
     return { ...data, wsUrl: rehostToApiBase(data.wsUrl) };
   },

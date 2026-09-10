@@ -1704,6 +1704,17 @@ function ChatView({ info, sessionId, model: sessionModelProp, onSelect, allSessi
         </span>
       </div>
 
+      {/* TUI control channel down: steer/interrupt/approvals are
+          unavailable. Show WHY (the ticket error carries the server's
+          failure stage) instead of failing silently. */}
+      {gwStatus !== 'on' && gateway.ticketError ? (
+        <div className="shrink-0 border-b border-amber-300 bg-amber-50 px-4 sm:px-6 py-2">
+          <p className="font-mono text-[10px] tracking-[0.08em] text-amber-800 break-words" title={gateway.ticketError}>
+            STEER/INTERRUPT OFF — {gateway.ticketError}
+          </p>
+        </div>
+      ) : null}
+
       {/* Messages + input share the right-side scroll. Input is the
           last child so it lives at the natural end of the scrolling
           column. The column sticks to the bottom when content is

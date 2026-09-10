@@ -38,6 +38,7 @@ const { gatewayStub, gwRespond, capturedEvent } = vi.hoisted(() => {
   const gatewayStub: {
     status: 'on' | 'off';
     gw: { ready: boolean; respond: (...args: never[]) => Promise<unknown> } | null;
+    ticketError: string | null;
     registerListener: (cb: (ev: { type: string; payload: Record<string, unknown> }) => void) => void;
     createGatewaySession: ReturnType<typeof vi.fn>;
     resumeGatewaySession: ReturnType<typeof vi.fn>;
@@ -47,6 +48,7 @@ const { gatewayStub, gwRespond, capturedEvent } = vi.hoisted(() => {
     // gateway flip it online and reset it afterwards.
     status: 'off',
     gw: null,
+    ticketError: null,
     registerListener: (cb: (ev: { type: string; payload: Record<string, unknown> }) => void) => {
       capturedEvent.listener = cb;
     },
