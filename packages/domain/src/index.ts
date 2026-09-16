@@ -65,6 +65,12 @@ export const taskCategorySchema = z.enum([
   'other',
 ]);
 
+/** A calendar day, no time part: the unit of task scheduling. */
+export const dayKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected a YYYY-MM-DD calendar day');
+
+/** Task progress log entry kinds. */
+export const taskUpdateKindSchema = z.enum(['progress', 'blocker', 'handoff', 'note', 'status']);
+
 export const upcomingKindSchema = z.enum([
   'appointment',
   'deadline',
@@ -501,7 +507,11 @@ export const createTaskArgsSchema = z.object({
   category: taskCategorySchema.optional(),
   status: taskStatusSchema.optional(),
   priority: z.coerce.number().int().optional(),
+  /** Calendar day to put this on the board (YYYY-MM-DD). */
+  scheduledFor: dayKeySchema.optional(),
   dueAt: z.string().datetime().optional(),
+  /** Standing brief for Hermes, used when the task is delegated. */
+  delegateNote: z.string().max(4000).optional(),
   objectId: z.string().uuid().optional(),
   batchId: z.string().uuid().optional(),
   source: z.string().min(1).max(500),
@@ -515,7 +525,11 @@ export const updateTaskArgsSchema = z
     category: taskCategorySchema.optional(),
     status: taskStatusSchema.optional(),
     priority: z.coerce.number().int().optional(),
-    dueAt: z.string().datetime().optional(),
+    /** Calendar day (YYYY-MM-DD); null clears it. */
+    scheduledFor: dayKeySchema.nullable().optional(),
+    dueAt: z.string().datetime().nullable().optional(),
+    /** Standing brief for Hermes; null clears it. */
+    delegateNote: z.string().max(4000).nullable().optional(),
     source: z.string().min(1).max(500),
   })
   .refine(
@@ -525,17 +539,44 @@ export const updateTaskArgsSchema = z
       v.category !== undefined ||
       v.status !== undefined ||
       v.priority !== undefined ||
-      v.dueAt !== undefined,
+      v.scheduledFor !== undefined ||
+      v.dueAt !== undefined ||
+      v.delegateNote !== undefined,
     { message: 'At least one updatable field must be provided' },
   );
 
 export const listTasksArgsSchema = z.object({
   status: taskStatusSchema.optional(),
   category: taskCategorySchema.optional(),
+  /** Only tasks assigned to this calendar day. */
+  scheduledFor: dayKeySchema.optional(),
+  /** Deadline window over dueAt. */
+  dueFrom: z.string().datetime().optional(),
+  dueTo: z.string().datetime().optional(),
+  /** true = delegated to Hermes only, false = never delegated. */
+  delegated: z.boolean().optional(),
   since: z.string().datetime().optional(),
   until: z.string().datetime().optional(),
   batchId: z.string().uuid().optional(),
   limit: z.number().int().min(1).max(200).default(50),
+});
+
+// --- Task progress log (shared by the user and Hermes) ---
+
+export const addTaskProgressArgsSchema = z.object({
+  id: z.string().uuid(),
+  /** What changed / what is left. Concrete, not a restatement of the title. */
+  body: z.string().min(1).max(4000),
+  /** Progress claim 0-100. Omit for a plain note. */
+  percent: z.number().int().min(0).max(100).optional(),
+  /** 'blocker' when you are stuck and need the user, 'handoff' when a part is theirs now. */
+  kind: taskUpdateKindSchema.optional(),
+  source: z.string().min(1).max(500).optional(),
+});
+
+export const listTaskProgressArgsSchema = z.object({
+  id: z.string().uuid(),
+  limit: z.number().int().min(1).max(100).default(20),
 });
 
 export const archiveTaskArgsSchema = z.object({

@@ -1,7 +1,7 @@
-import { and, count, desc, eq, gte, inArray, isNull, lt, not, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { schema } from '@hermieos/db';
 import { getDb } from './db.js';
-import { listTasks, type TaskRow } from './tasks.js';
+import { listOverdueTasks, listTasksForDay, toDayKey, type TaskRow } from './tasks.js';
 import { listUpcoming, type UpcomingRow } from './upcoming.js';
 import { getRecentActivity, type FeedEventRow } from './feed.js';
 import { getUserGraph } from './relationships.js';
@@ -60,8 +60,6 @@ export async function getDashboard(userId: string): Promise<DashboardData> {
   const db = getDb();
   const now = new Date();
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfDay = new Date(startOfDay);
-  endOfDay.setDate(endOfDay.getDate() + 1);
   const sevenDaysOut = new Date(startOfDay);
   sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
   const thirtyDaysOut = new Date(startOfDay);
@@ -71,49 +69,13 @@ export async function getDashboard(userId: string): Promise<DashboardData> {
   const weekAgo = new Date(startOfDay);
   weekAgo.setDate(weekAgo.getDate() - 7);
 
-  // Tasks due today + in progress + overdue.
-  const todayTasks = await listTasks(userId, {
-    since: startOfDay,
-    until: endOfDay,
-    status: 'todo',
-    limit: 50,
-  });
-  const inProgress = await listTasks(userId, {
-    status: 'in_progress',
-    limit: 10,
-  });
-  const overdueRows = await db
-    .select()
-    .from(schema.tasks)
-    .where(
-      and(
-        eq(schema.tasks.userId, userId),
-        isNull(schema.tasks.archivedAt),
-        sql`${schema.tasks.status} <> 'done'`,
-        sql`${schema.tasks.status} <> 'cancelled'`,
-        lt(schema.tasks.dueAt, now),
-      ),
-    )
-    .orderBy(schema.tasks.dueAt)
-    .limit(20);
-  const overdueTasks = overdueRows.map((r) => ({
-    id: r.id,
-    userId: r.userId,
-    title: r.title,
-    notes: r.notes,
-    category: r.category,
-    status: r.status,
-    priority: r.priority,
-    dueAt: r.dueAt,
-    completedAt: r.completedAt,
-    createdBy: r.createdBy,
-    batchId: r.batchId,
-    sentToHermesAt: r.sentToHermesAt,
-    objectId: r.objectId,
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-    archivedAt: r.archivedAt,
-  }));
+  // Today's board: tasks assigned to today (scheduledFor), due today, or
+  // already in progress. This used to filter on createdAt — which meant a
+  // task scheduled for today showed up only if it was *created* today, and
+  // deadlines never surfaced on the mission board at all.
+  const todayKey = toDayKey(now);
+  const dayBoard = await listTasksForDay(userId, todayKey, { limit: 60 });
+  const overdueTasks = await listOverdueTasks(userId, 20);
 
   const completedRows = await db
     .select({ id: schema.tasks.id })
@@ -298,7 +260,7 @@ export async function getDashboard(userId: string): Promise<DashboardData> {
 
   return {
     tasks: {
-      today: [...inProgress.tasks, ...todayTasks.tasks].slice(0, 10),
+      today: dayBoard.tasks.slice(0, 20),
       overdue: overdueTasks.slice(0, 5),
       completedThisWeek: completedRows.length,
     },
@@ -322,6 +284,3 @@ export async function getDashboard(userId: string): Promise<DashboardData> {
     generatedAt: now.toISOString(),
   };
 }
-
-// Avoid an unused-import warning on `not` (kept for future use in dashboard query helpers)
-void not;

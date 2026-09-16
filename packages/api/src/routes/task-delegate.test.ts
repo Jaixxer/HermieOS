@@ -102,9 +102,10 @@ describe('POST /tasks/:id/delegate', () => {
     const sent = String(msgs[0]?.content ?? '');
     expect(sent).toContain('Task: Write the quarterly report');
     expect(sent).toContain('Notes: Cover Q2 numbers');
-    expect(sent).toContain('Context from the user:');
+    expect(sent).toContain('Context for this hand-off:');
     expect(sent).toContain('The board wants it by Friday.');
     expect(sent).toContain('take on this task and do it');
+    expect(sent).toContain('add_task_progress');
 
     // Task marked as delegated.
     const [row] = await db
@@ -125,7 +126,7 @@ describe('POST /tasks/:id/delegate', () => {
     expect(res.statusCode).toBe(200);
     const msgs = hermes.messages.get(`task-${task.id}`) ?? [];
     const sent = String(msgs[0]?.content ?? '');
-    expect(sent).not.toContain('Context from the user:');
+    expect(sent).not.toContain('Context for this hand-off:');
     expect(sent).toContain('take on this task and do it');
   });
 

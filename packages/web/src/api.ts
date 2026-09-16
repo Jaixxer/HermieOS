@@ -147,6 +147,21 @@ export type OpportunityCategory =
   | 'competition'
   | 'other';
 
+export type TaskUpdateKind = 'progress' | 'blocker' | 'handoff' | 'note' | 'status';
+
+/** One entry in a task's shared progress log. `actor` says who wrote it. */
+export interface TaskUpdate {
+  id: string;
+  taskId: string;
+  userId: string;
+  actor: 'user' | 'hermes' | 'system';
+  kind: TaskUpdateKind;
+  body: string;
+  percent: number | null;
+  sharedWithHermesAt: string | null;
+  createdAt: string;
+}
+
 export interface Task {
   id: string;
   userId: string;
@@ -155,11 +170,20 @@ export interface Task {
   category: TaskCategory;
   status: TaskStatus;
   priority: number;
+  /** Calendar day the task is assigned to (YYYY-MM-DD), or null. */
+  scheduledFor: string | null;
   dueAt: string | null;
   completedAt: string | null;
   createdBy: 'user' | 'hermes' | 'system';
   batchId: string | null;
   sentToHermesAt: string | null;
+  /** Standing brief written for Hermes on this task. */
+  delegateNote: string | null;
+  delegatedAt: string | null;
+  progressPercent: number;
+  /** Newest progress entry + total entries (present on list/get). */
+  latestUpdate?: TaskUpdate | null;
+  updatesCount?: number;
   objectId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -174,6 +198,17 @@ export interface Notification {
   priority: 'low' | 'normal' | 'high';
   readAt: string | null;
   createdAt: string;
+}
+
+/** Response of GET /tasks: the plain/day shapes always carry `tasks`. */
+export interface TaskListResponse {
+  tasks: Task[];
+  hasMore: boolean;
+  /** Present for the `?day=` shape. */
+  day?: string;
+  /** Present for the `?from&to` shape: the days covered + per-day counts. */
+  days?: string[];
+  counts?: Record<string, { assigned: number; due: number; open: number }>;
 }
 
 export interface TaskAnalytics {
@@ -804,11 +839,35 @@ export const api = {
   },
 
   // Tasks
-  listTasks(params: { status?: TaskStatus; category?: TaskCategory; batchId?: string; limit?: number } = {}): Promise<{ tasks: Task[]; hasMore: boolean }> {
+  /**
+   * List tasks. Three shapes:
+   *  - `{ day }`  → that day's board (assigned to it, due that day, or in progress)
+   *  - `{ from, to }` → range view: assigned into the range or due into it,
+   *                     plus per-day counts for the week strip
+   *  - anything else → a plain filtered list
+   */
+  listTasks(
+    params: {
+      status?: TaskStatus;
+      category?: TaskCategory;
+      batchId?: string;
+      day?: string;
+      from?: string;
+      to?: string;
+      scheduledFor?: string;
+      delegated?: boolean;
+      limit?: number;
+    } = {},
+  ): Promise<TaskListResponse> {
     const qs = new URLSearchParams();
     if (params.status) qs.set('status', params.status);
     if (params.category) qs.set('category', params.category);
     if (params.batchId) qs.set('batchId', params.batchId);
+    if (params.day) qs.set('day', params.day);
+    if (params.from) qs.set('from', params.from);
+    if (params.to) qs.set('to', params.to);
+    if (params.scheduledFor) qs.set('scheduledFor', params.scheduledFor);
+    if (params.delegated !== undefined) qs.set('delegated', String(params.delegated));
     if (params.limit) qs.set('limit', String(params.limit));
     const q = qs.toString();
     return request(`/tasks${q ? `?${q}` : ''}`);
@@ -816,10 +875,48 @@ export const api = {
   taskAnalytics(days = 7): Promise<TaskAnalytics> {
     return request(`/tasks/analytics?days=${days}`);
   },
-  createTask(body: { title: string; notes?: string; category?: TaskCategory; status?: TaskStatus; priority?: number; dueAt?: string; objectId?: string; batchId?: string }): Promise<{ task: Task }> {
+  /** One task plus its full progress log (newest first). */
+  getTask(id: string): Promise<{ task: Task; updates: TaskUpdate[] }> {
+    return request(`/tasks/${id}`);
+  },
+  listTaskUpdates(id: string, limit = 50): Promise<{ updates: TaskUpdate[] }> {
+    return request(`/tasks/${id}/updates?limit=${limit}`);
+  },
+  /** Append a progress entry as the user. On a delegated task the API also
+   *  relays it into that task's Hermes conversation (sharedWithHermes). */
+  addTaskProgress(
+    id: string,
+    body: { body: string; percent?: number; kind?: TaskUpdateKind },
+  ): Promise<{ update: TaskUpdate; progressPercent: number; status: TaskStatus; sharedWithHermes: boolean }> {
+    return request(`/tasks/${id}/updates`, { method: 'POST', body: JSON.stringify(body) });
+  },
+  createTask(body: {
+    title: string;
+    notes?: string;
+    category?: TaskCategory;
+    status?: TaskStatus;
+    priority?: number;
+    scheduledFor?: string;
+    dueAt?: string;
+    delegateNote?: string;
+    objectId?: string;
+    batchId?: string;
+  }): Promise<{ task: Task }> {
     return request('/tasks', { method: 'POST', body: JSON.stringify(body) });
   },
-  updateTask(id: string, body: { title?: string; notes?: string; category?: TaskCategory; status?: TaskStatus; priority?: number; dueAt?: string | null }): Promise<{ task: Task }> {
+  updateTask(
+    id: string,
+    body: {
+      title?: string;
+      notes?: string;
+      category?: TaskCategory;
+      status?: TaskStatus;
+      priority?: number;
+      scheduledFor?: string | null;
+      dueAt?: string | null;
+      delegateNote?: string | null;
+    },
+  ): Promise<{ task: Task }> {
     return request(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
   },
   archiveTask(id: string): Promise<{ archived: boolean }> {
@@ -828,10 +925,14 @@ export const api = {
   sendTasksToHermes(taskIds: string[], prompt?: string): Promise<{ updated: number; prompt: string }> {
     return request('/tasks/send-to-hermes', { method: 'POST', body: JSON.stringify({ taskIds, prompt }) });
   },
-  /** Hand one task to Hermes with optional context. The task stays on
-   *  the user's mission; Hermes gets a dedicated conversation
-   *  (`task-<id>` on the gateway) and reports back there. */
-  delegateTask(id: string, body: { context?: string }): Promise<{ sessionId: string; delegated: boolean }> {
+  /** Hand one task to Hermes with an optional standing brief (`note`) and
+   *  one-shot context. The task stays on your board; Hermes gets a
+   *  dedicated conversation (`task-<id>` on the gateway), the progress log
+   *  so far, and reports back through add_task_progress. */
+  delegateTask(
+    id: string,
+    body: { context?: string; note?: string },
+  ): Promise<{ sessionId: string; delegated: boolean; progressEntriesShared: number }> {
     return request(`/tasks/${id}/delegate`, { method: 'POST', body: JSON.stringify(body) });
   },
 

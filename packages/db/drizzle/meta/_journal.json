@@ -97,6 +97,14 @@
       "tag": "0010_google_oauth_apps",
       "breakpoints": true,
       "hash": "c61c1206c45cc68d87bd4e21e10743a4d89b2cc614c799f2d71418f19bdd878f"
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785904471711,
+      "tag": "0011_tasks_schedule_delegation_progress",
+      "breakpoints": true,
+      "hash": "ff23fa2b6f729f3d473194dda6442c4d1527d84ae1b1d0e5f24822d0da7228b5"
     }
   ]
 }

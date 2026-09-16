@@ -4,6 +4,7 @@ import {
   Home,
   Target,
   Lightbulb,
+  ListChecks,
   Radar,
   CalendarDays,
   Settings,
@@ -22,6 +23,7 @@ import { cn } from '../lib/utils';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Home', icon: Home },
+  { to: '/tasks', label: 'Tasks', icon: ListChecks },
   { to: '/mission', label: 'Mission', icon: Target },
   { to: '/knowledge', label: 'Knowledge', icon: Lightbulb },
   { to: '/scouting', label: 'Scouting', icon: Radar },

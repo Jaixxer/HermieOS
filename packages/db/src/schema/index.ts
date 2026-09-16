@@ -1,6 +1,7 @@
 import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -517,6 +518,12 @@ export const tasks = pgTable(
     category: taskCategoryEnum('category').notNull().default('other'),
     status: taskStatusEnum('status').notNull().default('todo'),
     priority: integer('priority').notNull().default(0),
+    // The calendar day the user assigned this task to (day granularity,
+    // no time component). The mission board buckets by this — a task
+    // scheduled for Friday shows up on Friday's board.
+    scheduledFor: date('scheduled_for', { mode: 'string' }),
+    // The hard deadline: the instant it must be done by. Independent of
+    // scheduledFor — a task can have either, both, or neither.
     dueAt: timestamp('due_at', { withTimezone: true }),
     completedAt: timestamp('completed_at', { withTimezone: true }),
     // provenance: who set this task? user (typed in dashboard) or hermes (chat)
@@ -524,6 +531,13 @@ export const tasks = pgTable(
     // the dashboard batch that included this task, for grouping + "sent to hermes" state
     batchId: uuid('batch_id'),
     sentToHermesAt: timestamp('sent_to_hermes_at', { withTimezone: true }),
+    // delegation: standing brief the user writes for Hermes on this task,
+    // and when it was handed over. The task stays the user's.
+    delegateNote: text('delegate_note'),
+    delegatedAt: timestamp('delegated_at', { withTimezone: true }),
+    // cached mirror of the newest task_updates row (0-100). Both the user
+    // and Hermes write progress; the log is the source of truth.
+    progressPercent: integer('progress_percent').notNull().default(0),
     // optional link to an Object for the knowledge graph
     objectId: uuid('object_id').references(() => objects.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -535,6 +549,48 @@ export const tasks = pgTable(
     index('tasks_user_batch_idx').on(t.userId, t.batchId),
     index('tasks_user_category_idx').on(t.userId, t.category),
     index('tasks_user_archived_idx').on(t.userId, t.archivedAt),
+    index('tasks_user_scheduled_idx').on(t.userId, t.scheduledFor),
+  ],
+);
+
+// --- task_updates (progress log — shared by the user and Hermes) ---
+// Every progress note on a task is one row. Both the user (from the app)
+// and Hermes (via the add_task_progress MCP tool) append here. For a
+// delegated task the user's updates are relayed into that task's Hermes
+// conversation, so the agent always sees the latest state.
+
+export const taskUpdateKindEnum = pgEnum('task_update_kind', [
+  'progress',
+  'blocker',
+  'handoff',
+  'note',
+  'status',
+]);
+
+export const taskUpdates = pgTable(
+  'task_updates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // who wrote this update
+    actor: actorEnum('actor').notNull(),
+    kind: taskUpdateKindEnum('kind').notNull().default('progress'),
+    body: text('body').notNull(),
+    // optional progress claim (0-100); when set it also updates
+    // tasks.progress_percent
+    percent: integer('percent'),
+    // set when this update was relayed into the Hermes task conversation
+    sharedWithHermesAt: timestamp('shared_with_hermes_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('task_updates_task_created_idx').on(t.taskId, t.createdAt),
+    index('task_updates_user_created_idx').on(t.userId, t.createdAt),
   ],
 );
 
@@ -607,6 +663,16 @@ export const objectRevisionsRelations = relations(objectRevisions, ({ one }) => 
   user: one(users, { fields: [objectRevisions.userId], references: [users.id] }),
 }));
 
+export const tasksRelations = relations(tasks, ({ one, many }) => ({
+  user: one(users, { fields: [tasks.userId], references: [users.id] }),
+  updates: many(taskUpdates),
+}));
+
+export const taskUpdatesRelations = relations(taskUpdates, ({ one }) => ({
+  task: one(tasks, { fields: [taskUpdates.taskId], references: [tasks.id] }),
+  user: one(users, { fields: [taskUpdates.userId], references: [users.id] }),
+}));
+
 // --- type exports ---
 
 export type User = typeof users.$inferSelect;
@@ -631,6 +697,8 @@ export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
+export type TaskUpdate = typeof taskUpdates.$inferSelect;
+export type NewTaskUpdate = typeof taskUpdates.$inferInsert;
 export type Upcoming = typeof upcoming.$inferSelect;
 export type NewUpcoming = typeof upcoming.$inferInsert;
 

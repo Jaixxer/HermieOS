@@ -193,6 +193,25 @@ function categoryTone(cat: TaskCategory): string {
   return CATEGORY_TONE[cat] ?? CATEGORY_TONE['other']!;
 }
 
+/** Deadline as a short label + urgency tone, evaluated against local today. */
+function deadlineLabel(iso: string): { text: string; tone: string } {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const diffDays = Math.round((startOfDay(d).getTime() - startOfDay(new Date()).getTime()) / 86_400_000);
+  if (diffDays < 0) {
+    return {
+      text: `DEADLINE MISSED · ${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase()} ${time}`,
+      tone: 'text-status-failed font-black',
+    };
+  }
+  if (diffDays === 0) return { text: `DEADLINE TODAY ${time}`, tone: 'text-accent font-black' };
+  if (diffDays === 1) return { text: `DEADLINE TOMORROW ${time}`, tone: 'text-amber-400' };
+  return {
+    text: `DEADLINE ${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase()} ${time}`,
+    tone: '',
+  };
+}
+
 // ============================================================================
 // Radial mission dial — 270° arc gauge with tick marks
 // ============================================================================
@@ -312,14 +331,30 @@ function ObjectiveTicket({
           {task.title}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px] tracking-[0.08em] text-p5-dark-muted">
-          {task.dueAt && !isToday(task.dueAt) && !done ? (
-            <span className={overdue ? 'text-status-failed' : ''}>
-              DUE {new Date(task.dueAt).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase()}
-            </span>
+          {task.dueAt && !done ? (
+            <span className={deadlineLabel(task.dueAt).tone}>{deadlineLabel(task.dueAt).text}</span>
           ) : null}
           {task.status === 'in_progress' ? <span className="text-accent">IN PROGRESS</span> : null}
           {task.sentToHermesAt ? <span className="text-accent">Delegated to Hermes</span> : null}
         </div>
+
+        {/* Progress — written by the user and by Hermes in the same log. */}
+        {task.progressPercent > 0 ? (
+          <div className="mt-2 flex items-center gap-2">
+            <div className="h-1 w-full max-w-[180px] bg-black/10">
+              <div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${task.progressPercent}%` }} />
+            </div>
+            <span className="font-mono text-[9px] tabular-nums text-p5-dark-muted">{task.progressPercent}%</span>
+          </div>
+        ) : null}
+        {task.latestUpdate ? (
+          <div className="mt-1 truncate font-mono text-[10px] text-p5-dark-muted">
+            <span className={task.latestUpdate.actor === 'hermes' ? 'text-accent' : ''}>
+              {task.latestUpdate.actor === 'hermes' ? 'HERMES' : 'YOU'}
+            </span>
+            : {task.latestUpdate.body}
+          </div>
+        ) : null}
       </div>
 
       <span className={cn('shrink-0 border px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em]', categoryTone(task.category))}>

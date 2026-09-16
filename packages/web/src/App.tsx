@@ -21,6 +21,7 @@ import { CalendarPage } from './pages/CalendarPage';
 import { FeedPage } from './pages/FeedPage';
 import { ChatPage } from './pages/ChatPage';
 import { MissionPage } from './pages/MissionPage';
+import { TasksPage } from './pages/TasksPage';
 import { KnowledgePage } from './pages/KnowledgePage';
 
 
@@ -80,6 +81,7 @@ export function App(): React.JSX.Element {
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/feed" element={<FeedPage />} />
         <Route path="/mission" element={<MissionPage />} />
+        <Route path="/tasks" element={<TasksPage />} />
         <Route path="/opportunities" element={<Navigate to="/scouting/findings" replace />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/chat/:sessionId" element={<ChatPage />} />

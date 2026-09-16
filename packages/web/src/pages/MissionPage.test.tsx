@@ -40,11 +40,15 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     category: 'work',
     status: 'todo',
     priority: 0,
+    scheduledFor: null,
     dueAt: new Date().toISOString(),
     completedAt: null,
     createdBy: 'user',
     batchId: null,
     sentToHermesAt: null,
+    delegateNote: null,
+    delegatedAt: null,
+    progressPercent: 0,
     objectId: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -160,7 +164,9 @@ describe('MissionPage', () => {
   it('delegates a task to Hermes with context from the dialog', async () => {
     const user = userEvent.setup();
     vi.spyOn(api, 'dashboard').mockResolvedValue(makeDash([makeTask()]));
-    const delegateSpy = vi.spyOn(api, 'delegateTask').mockResolvedValue({ sessionId: 'task-t-1', delegated: true });
+    const delegateSpy = vi
+      .spyOn(api, 'delegateTask')
+      .mockResolvedValue({ sessionId: 'task-t-1', delegated: true, progressEntriesShared: 0 });
 
     renderPage();
     const delegateBtn = await screen.findByRole('button', { name: 'Delegate to Hermes' });
@@ -181,7 +187,9 @@ describe('MissionPage', () => {
   it('delegates without context when the box is left empty', async () => {
     const user = userEvent.setup();
     vi.spyOn(api, 'dashboard').mockResolvedValue(makeDash([makeTask()]));
-    const delegateSpy = vi.spyOn(api, 'delegateTask').mockResolvedValue({ sessionId: 'task-t-1', delegated: true });
+    const delegateSpy = vi
+      .spyOn(api, 'delegateTask')
+      .mockResolvedValue({ sessionId: 'task-t-1', delegated: true, progressEntriesShared: 0 });
 
     renderPage();
     await user.click(await screen.findByRole('button', { name: 'Delegate to Hermes' }));

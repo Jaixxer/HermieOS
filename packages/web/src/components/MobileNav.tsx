@@ -32,7 +32,7 @@ const TABS: Tab[] = [
   },
   { to: '/chat', label: 'COMMAND', icon: MessageSquare, fab: true, match: (p) => p.startsWith('/chat') },
   { to: '/feed', label: 'FEED', icon: Activity, match: (p) => p.startsWith('/feed') },
-  { to: '/mission', label: 'TASKS', icon: ListChecks, match: (p) => p.startsWith('/mission') },
+  { to: '/tasks', label: 'TASKS', icon: ListChecks, match: (p) => p.startsWith('/tasks') || p.startsWith('/mission') },
 ];
 
 export function MobileHeader(): React.JSX.Element {
