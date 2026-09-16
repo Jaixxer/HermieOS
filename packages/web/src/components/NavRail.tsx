@@ -18,7 +18,7 @@ const NAV_ITEMS = [
   { to: '/chat', num: '04', label: 'Command', subtitle: 'Talk with Hermes', icon: MessageSquare },
   { to: '/feed', num: '05', label: 'Feed', subtitle: 'Activity stream', icon: Activity },
   { to: '/calendar', num: '06', label: 'Calendar', subtitle: 'Schedule & sync', icon: Calendar },
-  { to: '/tasks', num: '07', label: 'Tasks', subtitle: 'Plan & delegate', icon: ListChecks },
+  { to: '/planner', num: '07', label: 'Tasks', subtitle: 'Plan & delegate', icon: ListChecks },
   { to: '/settings', num: '08', label: 'Settings', subtitle: 'System & prefs', icon: Settings },
 ] as const;
 

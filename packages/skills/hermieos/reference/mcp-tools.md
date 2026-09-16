@@ -87,6 +87,44 @@ Scouting categories (the buckets in the Scouting inbox):
 `mcp_hermieos_create_category`, `mcp_hermieos_update_category`,
 `mcp_hermieos_archive_category`, `mcp_hermieos_list_categories`.
 
+## Task board and progress
+
+The user's task board is shared state: they write to it in the app, you
+write to it through these tools. The progress log is the hand-off
+channel for delegated work.
+
+- `mcp_hermieos_create_task` — add a task. Required: `title`.
+  Optional: `notes` (put the real specifics here, not a restatement of
+  the title), `category` (`work` | `learning` | `research` | `health` |
+  `admin` | `personal` | `other`), `status`, `priority`, `scheduledFor`
+  (calendar day `YYYY-MM-DD` — the day it sits on the board), `dueAt`
+  (hard deadline, strict UTC `Z`), `delegateNote` (standing brief for
+  you), `objectId`, `batchId`.
+- `mcp_hermieos_update_task` — change any of the above by `id`, plus
+  `status`. Pass `scheduledFor: null` to unassign the day, `dueAt: null`
+  to clear the deadline.
+- `mcp_hermieos_add_task_progress` — append one entry to a task's shared
+  progress log. Required: `id`, `body`. Optional: `percent` (0-100;
+  1-99 promotes a `todo` task to `in_progress`, 100 does not complete
+  it), `kind` (`progress` | `blocker` | `handoff` | `note` | `status`).
+  The user sees every entry in the app; on a delegated task their
+  entries come back to you the same way.
+- `mcp_hermieos_list_task_progress` — read a task's log, newest first
+  (`id`, optional `limit`, default 20). Catch up on delegated work
+  before continuing it.
+- `mcp_hermieos_get_task` — one task plus its full progress log.
+- `mcp_hermieos_list_tasks` — filter by `status`, `category`,
+  `batchId`, `scheduledFor` (one day), `dueFrom`/`dueTo` (deadline
+  window), `delegated` (true = only tasks handed to you), `since`/
+  `until` (creation range), `limit`.
+- `mcp_hermieos_get_dashboard` — `tasks.today` is the live board
+  (assigned today, due today, or in progress) with deadlines,
+  delegation state, `progressPercent` and `latestUpdate`; `tasks.overdue`
+  is the separate overdue bucket.
+- `mcp_hermieos_send_tasks_to_hermes` — records that a batch was handed
+  over. The delegation itself is the app's job; this only stamps the
+  dispatch time so the UI can show it.
+
 ## When the context bundle is wrong
 
 If a tool returns a 404 or an object_id you expected to exist is

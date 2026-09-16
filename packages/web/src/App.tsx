@@ -81,7 +81,10 @@ export function App(): React.JSX.Element {
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/feed" element={<FeedPage />} />
         <Route path="/mission" element={<MissionPage />} />
-        <Route path="/tasks" element={<TasksPage />} />
+        {/* NOTE: the page lives at /planner, not /tasks — the API owns
+            GET /tasks (the JSON list), so a hard load of /tasks would return
+            JSON instead of the app. Same reason /feed is a poor deep link. */}
+        <Route path="/planner" element={<TasksPage />} />
         <Route path="/opportunities" element={<Navigate to="/scouting/findings" replace />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/chat/:sessionId" element={<ChatPage />} />

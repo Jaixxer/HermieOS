@@ -74,6 +74,41 @@ the defaults below for the event type it handles.
 
 The full tool reference is in `reference/mcp-tools.md` if you need it.
 
+## Task board, deadlines and the shared progress log
+
+The user's Tasks page (`/tasks`) and the "Today's Mission" board read
+one model, and the progress log is the channel between you and them:
+
+- `create_task` / `update_task` take `scheduledFor` — the calendar day
+  the task sits on the board (`YYYY-MM-DD`) — and `dueAt` — the hard
+  deadline (strict UTC `Z`). The two are independent: either, both, or
+  neither. `delegateNote` is the standing brief the user writes for
+  you; never overwrite it, and follow it when you take the task on.
+- The dashboard's `tasks.today` bucket = tasks assigned to today, due
+  today, or already `in_progress`. A task scheduled for Friday is NOT
+  on today's board — schedule for today's date when the user means
+  today.
+- Every task carries a shared progress log: the user writes entries in
+  the app, you write them with `add_task_progress` (`id`, `body`,
+  optional `percent` 0-100, optional `kind`). Read the log with
+  `list_task_progress`, or `get_task`, which returns it newest-first.
+- When the user delegates a task, your brief already carries the task
+  id, deadline, the log so far and their guidance note. Continue from
+  the log — never redo finished parts — and keep `add_task_progress`
+  current: what you finished, what is left, and a percent when you
+  know one.
+- `kind='blocker'` means you need the user to act before you can
+  continue; `kind='handoff'` means the remaining part is theirs now.
+  Say what you need from them in the body, concretely.
+- The user's updates on a delegated task are relayed into your task
+  conversation automatically. Report back the same way through the
+  tool so the app stays the single source of truth — a reply that only
+  lives in chat leaves the board stale.
+- A `percent` of 1-99 moves a `todo` task to `in_progress`; 100 does
+  NOT complete it. Only the user closes a task.
+- Both only accept strict UTC `Z` datetimes for `dueAt`, and
+  `scheduledFor` is a day (`YYYY-MM-DD`) — no time part.
+
 ## When the context is wrong
 
 If `context` is empty, malformed, or clearly stale (the subscription was
