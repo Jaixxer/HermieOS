@@ -243,28 +243,28 @@ export function TasksPage(): React.JSX.Element {
     queryKey: ['tasks', 'range', weekStart],
     queryFn: () => api.listTasks({ from: weekStart, to: shiftDay(weekStart, 6), limit: 200 }),
     enabled: connected,
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
   });
 
   const dayQ = useQuery({
     queryKey: ['tasks', 'day', day],
     queryFn: () => api.listTasks({ day, limit: 100 }),
     enabled: connected && view === 'day',
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
   });
 
   const delegatedQ = useQuery({
     queryKey: ['tasks', 'delegated'],
     queryFn: () => api.listTasks({ delegated: true, limit: 100 }),
     enabled: connected && view === 'delegated',
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
   });
 
   const deadlinesQ = useQuery({
     queryKey: ['tasks', 'deadlines'],
     queryFn: () => api.listTasks({ from: todayKey(), to: shiftDay(todayKey(), 30), limit: 200 }),
     enabled: connected && view === 'deadlines',
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
   });
 
   const createMut = useMutation({
@@ -377,7 +377,7 @@ export function TasksPage(): React.JSX.Element {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 bg-p5-cream text-p5-dark">
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-8 md:px-10 lg:py-10">
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8 md:px-10">
         <div className="mx-auto max-w-[1128px]">
           {/* ─── Header ─── */}
           <header className="flex flex-wrap items-end justify-between gap-4 border-b-2 border-p5-dark pb-4">
@@ -415,7 +415,7 @@ export function TasksPage(): React.JSX.Element {
                 value={category}
                 onChange={(e) => setCategory(e.target.value as TaskCategory)}
                 aria-label="Category"
-                className="h-9 border border-black/25 bg-white px-2 font-mono text-[11px] outline-none focus:border-accent"
+                className="h-11 border border-black/25 bg-white px-2 font-mono text-[11px] outline-none focus:border-accent sm:h-9"
               >
                 {(Object.keys(CATEGORY_LABEL) as TaskCategory[]).map((c) => (
                   <option key={c} value={c}>
@@ -425,7 +425,7 @@ export function TasksPage(): React.JSX.Element {
               </select>
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-4 py-3">
+            <div className="flex flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5">
               <label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted">
                 <CalendarDays className="h-3.5 w-3.5" />
                 DAY
@@ -459,7 +459,7 @@ export function TasksPage(): React.JSX.Element {
                 type="button"
                 onClick={() => setShowMore((v) => !v)}
                 aria-expanded={showMore}
-                className="ml-auto flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted hover:text-accent"
+                className="flex min-h-[44px] items-center gap-1 font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted hover:text-accent sm:ml-auto sm:min-h-0"
               >
                 {showMore ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                 NOTES &amp; GUIDANCE FOR HERMES
@@ -467,7 +467,7 @@ export function TasksPage(): React.JSX.Element {
               <button
                 type="submit"
                 disabled={!title.trim() || createMut.isPending}
-                className="flex h-9 items-center gap-1.5 bg-accent px-4 font-mono text-[10px] font-black tracking-[0.14em] text-white transition hover:bg-accent-hover disabled:opacity-40"
+                className="flex h-11 w-full items-center justify-center gap-1.5 bg-accent px-4 font-mono text-[10px] font-black tracking-[0.14em] text-white transition hover:bg-accent-hover disabled:opacity-40 sm:h-9 sm:w-auto"
               >
                 {createMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
                 ADD TASK
@@ -501,7 +501,7 @@ export function TasksPage(): React.JSX.Element {
           </form>
 
           {/* ─── View switch ─── */}
-          <div className="mt-7 flex flex-wrap items-center gap-2">
+          <div className="mt-7 flex items-center gap-2 overflow-x-auto pb-1 sm:flex-wrap">
             {(
               [
                 { id: 'day', label: 'BY DAY' },
@@ -514,7 +514,7 @@ export function TasksPage(): React.JSX.Element {
                 type="button"
                 onClick={() => setView(v.id)}
                 className={cn(
-                  'border px-3 py-1.5 font-mono text-[10px] font-black tracking-[0.14em] transition',
+                  'min-h-[44px] shrink-0 border px-3 py-1.5 font-mono text-[10px] font-black tracking-[0.14em] transition sm:min-h-0',
                   view === v.id
                     ? 'border-accent bg-accent text-white'
                     : 'border-black/25 text-p5-dark-muted hover:border-accent hover:text-accent',
@@ -527,7 +527,7 @@ export function TasksPage(): React.JSX.Element {
 
           {/* ─── Week strip ─── */}
           {view === 'day' ? (
-            <div className="mt-4 grid grid-cols-4 gap-2 sm:grid-cols-7">
+            <div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:grid-cols-7 sm:overflow-visible sm:px-0">
               {weekDays.map((d) => {
                 const c = counts[d];
                 const isToday = d === today;
@@ -539,7 +539,7 @@ export function TasksPage(): React.JSX.Element {
                     onClick={() => setDay(d)}
                     aria-pressed={selected}
                     className={cn(
-                      'flex flex-col gap-1 border-2 px-2 py-2 text-left transition',
+                      'flex min-w-[84px] shrink-0 flex-col gap-1 border-2 px-2 py-2 text-left transition sm:min-w-0',
                       selected
                         ? 'border-accent bg-accent text-white'
                         : cn('border-black/15 bg-white hover:border-accent', isToday && 'border-p5-dark'),
@@ -748,11 +748,11 @@ function TaskCard({
           disabled={busy}
           aria-label={done ? 'Mark as not done' : 'Mark as done'}
           className={cn(
-            'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center border-2 transition',
+            'mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center border-2 transition sm:h-6 sm:w-6',
             done ? 'border-accent bg-accent text-white' : 'border-black/30 hover:border-accent',
           )}
         >
-          {done ? <span className="text-[12px] font-black leading-none">✓</span> : null}
+          {done ? <span className="text-[15px] font-black leading-none sm:text-[12px]">✓</span> : null}
         </button>
 
         <div className="min-w-0 flex-1">
@@ -797,7 +797,7 @@ function TaskCard({
               to={`/chat/task-${task.id}`}
               title="Open the Hermes conversation"
               aria-label="Open Hermes conversation"
-              className="flex h-8 w-8 items-center justify-center border border-accent/60 text-accent transition hover:bg-accent hover:text-white"
+              className="flex h-11 w-11 items-center justify-center sm:h-8 sm:w-8 border border-accent/60 text-accent transition hover:bg-accent hover:text-white"
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </Link>
@@ -808,7 +808,7 @@ function TaskCard({
               title="Delegate to Hermes"
               aria-label="Delegate to Hermes"
               disabled={busy}
-              className="flex h-8 w-8 items-center justify-center border border-black/20 text-p5-dark-muted transition hover:border-accent hover:bg-accent hover:text-white disabled:opacity-40"
+              className="flex h-11 w-11 items-center justify-center sm:h-8 sm:w-8 border border-black/20 text-p5-dark-muted transition hover:border-accent hover:bg-accent hover:text-white disabled:opacity-40"
             >
               <Send className="h-3.5 w-3.5" />
             </button>
@@ -818,7 +818,7 @@ function TaskCard({
             onClick={onToggleExpand}
             aria-expanded={expanded}
             aria-label={expanded ? 'Hide progress log' : 'Show progress log'}
-            className="flex h-8 w-8 items-center justify-center border border-black/20 text-p5-dark-muted transition hover:border-p5-dark hover:text-p5-dark"
+            className="flex h-11 w-11 items-center justify-center sm:h-8 sm:w-8 border border-black/20 text-p5-dark-muted transition hover:border-p5-dark hover:text-p5-dark"
           >
             {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
@@ -828,7 +828,7 @@ function TaskCard({
             title="Archive"
             aria-label="Archive task"
             disabled={busy}
-            className="flex h-8 w-8 items-center justify-center border border-black/20 text-p5-dark-muted transition hover:border-status-failed hover:text-status-failed disabled:opacity-40"
+            className="flex h-11 w-11 items-center justify-center sm:h-8 sm:w-8 border border-black/20 text-p5-dark-muted transition hover:border-status-failed hover:text-status-failed disabled:opacity-40"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
@@ -847,7 +847,7 @@ function TaskCard({
                     type="date"
                     value={task.scheduledFor ?? ''}
                     onChange={(e) => onMoveToDay(e.target.value)}
-                    className="h-8 border border-black/25 bg-white px-2 font-mono text-[11px] outline-none focus:border-accent"
+                    className="h-11 border border-black/25 bg-white px-2 font-mono text-[11px] outline-none focus:border-accent sm:h-8"
                   />
                 </label>
                 <label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted">
@@ -856,7 +856,7 @@ function TaskCard({
                     type="datetime-local"
                     value={toLocalInput(task.dueAt)}
                     onChange={(e) => onSetDeadline(e.target.value ? new Date(e.target.value).toISOString() : null)}
-                    className="h-8 border border-black/25 bg-white px-2 font-mono text-[11px] outline-none focus:border-accent"
+                    className="h-11 border border-black/25 bg-white px-2 font-mono text-[11px] outline-none focus:border-accent sm:h-8"
                   />
                 </label>
               </div>
@@ -879,14 +879,14 @@ function TaskCard({
                 <button
                   type="button"
                   onClick={() => onStatus(task.status === 'in_progress' ? 'todo' : 'in_progress')}
-                  className="border border-black/25 px-2.5 py-1 font-mono text-[10px] font-black tracking-[0.12em] text-p5-dark-muted transition hover:border-accent hover:text-accent"
+                  className="min-h-[44px] border border-black/25 px-3 py-1 font-mono text-[10px] font-black tracking-[0.12em] text-p5-dark-muted transition hover:border-accent hover:text-accent sm:min-h-0"
                 >
                   {task.status === 'in_progress' ? 'MARK PENDING' : 'MARK ACTIVE'}
                 </button>
                 <button
                   type="button"
                   onClick={() => onStatus('blocked')}
-                  className="border border-black/25 px-2.5 py-1 font-mono text-[10px] font-black tracking-[0.12em] text-p5-dark-muted transition hover:border-status-failed hover:text-status-failed"
+                  className="min-h-[44px] border border-black/25 px-3 py-1 font-mono text-[10px] font-black tracking-[0.12em] text-p5-dark-muted transition hover:border-status-failed hover:text-status-failed sm:min-h-0"
                 >
                   BLOCKED
                 </button>
@@ -931,7 +931,7 @@ function TaskCard({
                     value={draft.kind}
                     onChange={(e) => onDraftChange({ kind: e.target.value as TaskUpdateKind })}
                     aria-label="Update kind"
-                    className="h-8 border border-black/25 bg-white px-2 font-mono text-[10px] outline-none focus:border-accent"
+                    className="h-11 border border-black/25 bg-white px-2 font-mono text-[10px] outline-none focus:border-accent sm:h-8"
                   >
                     {(Object.keys(KIND_LABEL) as TaskUpdateKind[]).map((k) => (
                       <option key={k} value={k}>
@@ -948,14 +948,14 @@ function TaskCard({
                       value={draft.percent}
                       onChange={(e) => onDraftChange({ percent: e.target.value })}
                       placeholder="—"
-                      className="h-8 w-16 border border-black/25 bg-white px-2 font-mono text-[11px] tabular-nums outline-none focus:border-accent"
+                      className="h-11 w-20 border border-black/25 bg-white px-2 font-mono text-[11px] tabular-nums outline-none focus:border-accent sm:h-8 sm:w-16"
                     />
                   </label>
                   <button
                     type="button"
                     onClick={onAddProgress}
                     disabled={!draft.body.trim() || progressPending}
-                    className="ml-auto flex h-8 items-center gap-1.5 bg-p5-dark px-3 font-mono text-[10px] font-black tracking-[0.12em] text-white transition hover:bg-accent disabled:opacity-40"
+                    className="ml-auto flex h-11 items-center gap-1.5 bg-p5-dark px-3 font-mono text-[10px] font-black tracking-[0.12em] text-white transition hover:bg-accent disabled:opacity-40 sm:h-8"
                   >
                     {progressPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />}
                     LOG UPDATE

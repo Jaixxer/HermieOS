@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { cn } from '../lib/utils';
-import logoUrl from '../assets/logo.png';
+// 192x128 WebP (3.6 kB) — the source PNG was 1536x1024 / 136 kB for a 40px badge.
+import logoUrl from '../assets/logo.webp';
 
 export interface LogoProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   size?: number;

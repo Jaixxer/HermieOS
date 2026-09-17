@@ -45,7 +45,7 @@ export function NotificationsBell(): React.JSX.Element {
     queryKey: ['notifications', 'unread'],
     queryFn: () => api.notificationUnreadCount(),
     enabled: connected,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   });
   const listQ = useQuery({
     queryKey: ['notifications', 'list'],

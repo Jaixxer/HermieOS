@@ -205,11 +205,52 @@ describe('MissionPage', () => {
       makeDash([makeTask({ sentToHermesAt: new Date().toISOString() })]),
     );
     renderPage();
-    expect(await screen.findByText('Delegated to Hermes')).toBeInTheDocument();
+    // The ticket carries a single status pill instead of a stack of labels.
+    expect(await screen.findByText('DELEGATED')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: 'Open Hermes conversation' });
     expect(link).toHaveAttribute('href', '/chat/task-t-1');
     // No delegate button for an already-delegated task.
     expect(screen.queryByRole('button', { name: 'Delegate to Hermes' })).not.toBeInTheDocument();
+  });
+
+  it('renders the deadline, progress and newest log line on a ticket', async () => {
+    const due = new Date();
+    due.setHours(18, 30, 0, 0);
+    vi.spyOn(api, 'dashboard').mockResolvedValue(
+      makeDash([
+        makeTask({
+          dueAt: due.toISOString(),
+          progressPercent: 40,
+          latestUpdate: {
+            id: 'up-1',
+            taskId: 't-1',
+            userId: 'u-1',
+            actor: 'hermes',
+            kind: 'progress',
+            body: 'Drafted the intro',
+            percent: 40,
+            sharedWithHermesAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+          },
+        }),
+      ]),
+    );
+    renderPage();
+    expect(await screen.findByText(/DEADLINE TODAY/i)).toBeInTheDocument();
+    expect(screen.getByText('40% DONE')).toBeInTheDocument();
+    expect(screen.getByText('Drafted the intro')).toBeInTheDocument();
+    expect(screen.getByText('HERMES')).toBeInTheDocument();
+  });
+
+  it('marks blockers and overdue work with their own status pill', async () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    vi.spyOn(api, 'dashboard').mockResolvedValue(
+      makeDash([makeTask({ status: 'blocked', dueAt: yesterday.toISOString() })]),
+    );
+    renderPage();
+    expect(await screen.findByText('BLOCKED')).toBeInTheDocument();
+    expect(screen.getByText(/DEADLINE MISSED/i)).toBeInTheDocument();
   });
 
   it('adds a task via the quick-add form', async () => {

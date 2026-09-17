@@ -22,7 +22,7 @@ export function useScouts() {
     queryKey: scoutKeys.all,
     queryFn: async () => (await api.subscriptions()).subscriptions,
     enabled: connected,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   });
 }
 

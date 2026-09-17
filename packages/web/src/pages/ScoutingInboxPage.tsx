@@ -221,7 +221,7 @@ function useScoutMetrics(scoutId: string | null) {
     queryKey: scoutId ? scoutKeys.metrics(scoutId) : ['scout-metrics'],
     queryFn: () => api.scoutMetrics(scoutId!),
     enabled: scoutId !== null,
-    refetchInterval: 15_000,
+    refetchInterval: 60_000,
     staleTime: 5_000,
   });
 }

@@ -36,6 +36,13 @@ interface ScheduleItem {
   event?: CalendarEvent;
   task?: Task;
   upcoming?: Upcoming;
+  /** Task assigned to this day (scheduledFor) rather than due on it. */
+  planned?: boolean;
+}
+
+/** Local calendar day as YYYY-MM-DD — the unit tasks are scheduled in. */
+function dayKeyOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function startOfMonth(d: Date): Date {
@@ -112,14 +119,15 @@ export function CalendarPage(): React.JSX.Element {
     staleTime: 30_000,
   });
 
-  // Tasks + upcoming items — the mission items that should appear on the
-  // schedule alongside Google Calendar events. Fetched without a date window
-  // (the web API has no server-side range filter for tasks) and filtered
-  // client-side to the current view range.
+  // Tasks — placed on the schedule by their ASSIGNED DAY (scheduledFor) and by
+  // their DEADLINE (dueAt), so planning a task for Friday puts it on Friday even
+  // with no deadline. Fetched for the visible window only: the API takes from/to
+  // day keys now, so this no longer downloads every task and filters in the
+  // browser.
   const calendarTasks = useQuery({
-    queryKey: ['calendar', 'tasks'],
-    queryFn: () => api.listTasks({ limit: 200 }),
-    staleTime: 30_000,
+    queryKey: ['calendar', 'tasks', dayKeyOf(from), dayKeyOf(to)],
+    queryFn: () => api.listTasks({ from: dayKeyOf(from), to: dayKeyOf(to), limit: 200 }),
+    staleTime: 60_000,
   });
   const calendarUpcoming = useQuery({
     queryKey: ['calendar', 'upcoming'],
@@ -140,9 +148,20 @@ export function CalendarPage(): React.JSX.Element {
       const evs: ScheduleItem[] = (events.data?.events ?? [])
         .filter((e) => isSameDay(new Date(e.startsAt), d))
         .map((e) => ({ kind: 'event' as const, id: e.id, title: e.title, date: new Date(e.startsAt), event: e }));
+      const key = dayKeyOf(d);
       const tasks: ScheduleItem[] = (calendarTasks.data?.tasks ?? [])
-        .filter((t) => t.status !== 'done' && t.status !== 'cancelled' && !!t.dueAt && isSameDay(new Date(t.dueAt), d))
-        .map((t) => ({ kind: 'task' as const, id: t.id, title: t.title, date: new Date(t.dueAt!), task: t }));
+        .filter((t) => t.status !== 'done' && t.status !== 'cancelled')
+        .map((t): ScheduleItem | null => {
+          const due = t.dueAt ? new Date(t.dueAt) : null;
+          if (due && isSameDay(due, d)) {
+            return { kind: 'task', id: t.id, title: t.title, date: due, task: t, planned: false };
+          }
+          if (t.scheduledFor === key) {
+            return { kind: 'task', id: t.id, title: t.title, date: startOfDay(d), task: t, planned: true };
+          }
+          return null;
+        })
+        .filter((x): x is ScheduleItem => x !== null);
       const upcoming: ScheduleItem[] = (calendarUpcoming.data?.items ?? [])
         .filter((u) => !u.completedAt && isSameDay(new Date(u.occursAt), d))
         .map((u) => ({ kind: 'upcoming' as const, id: u.id, title: u.title, date: new Date(u.occursAt), upcoming: u }));
@@ -227,13 +246,18 @@ export function CalendarPage(): React.JSX.Element {
           {status.isLoading ? (
             <div className="py-20 text-center font-mono text-[12px] tracking-widest text-p5-dark-muted">LOADING THE SCHEDULE…</div>
           ) : view === 'month' ? (
-            <MonthGrid
-              cursor={cursor}
-              selected={selectedDate}
-              onSelect={setSelectedDate}
-              eventsOnDay={eventsOnDay}
-              onEventClick={openItem}
-            />
+            <>
+              <MonthGrid
+                cursor={cursor}
+                selected={selectedDate}
+                onSelect={setSelectedDate}
+                eventsOnDay={eventsOnDay}
+                onEventClick={openItem}
+              />
+              {/* Phones: the grid can only carry dots at 390 px, so the tapped
+                  day's actual items are listed right below it. */}
+              <DayAgenda cursor={selectedDate} eventsOnDay={eventsOnDay} onEventClick={openItem} />
+            </>
           ) : view === 'week' ? (
             <WeekGrid
               cursor={cursor}
@@ -450,7 +474,8 @@ function GoogleConnectButton({
 
 function EventChip({ item, onClick, compact }: { item: ScheduleItem; onClick: () => void; compact?: boolean }): React.JSX.Element {
   const isEvent = item.kind === 'event';
-  const badge = item.kind === 'event' ? null : item.kind === 'task' ? 'TASK' : 'GOAL';
+  const badge =
+    item.kind === 'event' ? null : item.kind === 'task' ? (item.planned ? 'PLAN' : 'DUE') : 'GOAL';
   const borderCls = isEvent
     ? 'border-accent bg-accent/10 hover:bg-accent/25'
     : item.kind === 'task'
@@ -533,6 +558,8 @@ function MonthGrid({
             <button
               key={day.toISOString()}
               type="button"
+              data-day={dayKeyOf(day)}
+              aria-label={day.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
               onClick={() => onSelect(day)}
               className={cn(
                 'flex h-[88px] sm:h-[104px] flex-col gap-0.5 border-b border-r border-black/[0.06] p-1 sm:p-1.5 text-left transition',
@@ -578,6 +605,111 @@ function MonthGrid({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Day agenda — the phone's answer to "what is actually on this day?"
+// ============================================================================
+
+/**
+ * A month cell at 390 px can only carry dots, which tells the user nothing
+ * about WHAT is due. This lists the tapped day's items (time, kind, title,
+ * progress) directly under the grid, so the month view stays useful on a
+ * phone without leaving the month.
+ */
+function DayAgenda({
+  cursor,
+  eventsOnDay,
+  onEventClick,
+}: {
+  cursor: Date;
+  eventsOnDay: (d: Date) => ScheduleItem[];
+  onEventClick: (item: ScheduleItem) => void;
+}): React.JSX.Element {
+  const items = eventsOnDay(cursor);
+  const taskCount = items.filter((i) => i.kind === 'task').length;
+  return (
+    <div data-testid="day-agenda" className="mt-3 border-2 border-black/15 bg-p5-panel sm:hidden">
+      <div className="flex items-center justify-between gap-2 border-b-2 border-black/10 px-3.5 py-2.5">
+        <div className="min-w-0">
+          <div className="p5-kicker text-p5-dark-muted">SELECTED DAY</div>
+          <div className="mt-0.5 truncate text-[15px] font-black uppercase tracking-tight text-p5-dark">
+            {cursor.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}
+          </div>
+        </div>
+        <span className="shrink-0 border border-black/15 px-2 py-1 font-mono text-[9px] font-black tracking-[0.12em] text-p5-dark-muted">
+          {items.length === 0
+            ? 'CLEAR'
+            : `${items.length} ITEM${items.length === 1 ? '' : 'S'}${taskCount > 0 ? ` · ${taskCount} TASK${taskCount === 1 ? '' : 'S'}` : ''}`}
+        </span>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="px-3.5 py-6 text-center font-mono text-[11px] tracking-[0.14em] text-p5-dark-muted">
+          NOTHING ON THIS DAY.
+        </div>
+      ) : (
+        <ul>
+          {items.map((item) => {
+            const isEvent = item.kind === 'event';
+            const isTask = item.kind === 'task';
+            const left = isEvent
+              ? item.event?.allDay
+                ? 'ALL DAY'
+                : item.event
+                  ? timeOf(item.event.startsAt)
+                  : ''
+              : isTask
+                ? item.planned
+                  ? 'PLANNED'
+                  : 'DUE'
+                : 'GOAL';
+            return (
+              <li key={`${item.kind}-${item.id}`} className="border-b border-black/10 last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => onEventClick(item)}
+                  className="flex w-full items-start gap-3 px-3.5 py-3 text-left transition active:bg-black/[0.04]"
+                >
+                  <span className="mt-0.5 w-14 shrink-0 font-mono text-[10px] font-bold leading-snug text-p5-dark-muted">
+                    {left}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span
+                        className={cn(
+                          'shrink-0 px-1.5 py-0.5 font-mono text-[9px] font-black tracking-wide',
+                          isEvent
+                            ? 'bg-accent/15 text-accent'
+                            : isTask
+                              ? 'bg-amber-500/15 text-amber-600'
+                              : 'bg-purple-500/15 text-purple-600',
+                        )}
+                      >
+                        {isEvent ? 'EVENT' : isTask ? (item.planned ? 'PLANNED' : 'TASK') : 'GOAL'}
+                      </span>
+                      <span className="min-w-0 text-[15px] font-black leading-snug text-p5-dark">{item.title}</span>
+                    </span>
+                    {isTask && item.task ? (
+                      <span className="mt-1 block font-mono text-[10px] tracking-[0.06em] text-p5-dark-muted">
+                        {item.task.category.toUpperCase()}
+                        {item.task.progressPercent > 0 ? ` · ${item.task.progressPercent}% DONE` : ''}
+                        {item.task.sentToHermesAt ? ' · DELEGATED' : ''}
+                        {item.task.status === 'in_progress' ? ' · ACTIVE' : ''}
+                      </span>
+                    ) : null}
+                    {isEvent && item.event?.location ? (
+                      <span className="mt-1 block font-mono text-[10px] text-p5-dark-muted">{item.event.location}</span>
+                    ) : null}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

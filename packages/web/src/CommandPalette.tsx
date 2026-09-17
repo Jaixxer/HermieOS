@@ -102,7 +102,7 @@ export function CommandPalette(): React.JSX.Element | null {
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
       onClick={() => setOpen(false)}
     >
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-black/70 sm:backdrop-blur-sm" />
       <div
         className="relative w-full max-w-xl bg-[#111122]/95 border border-[#ffffff10] rounded-xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}

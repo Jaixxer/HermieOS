@@ -139,3 +139,89 @@ Environment notes found while verifying:
 State after the run: `hermieos-api` and `hermieos-mcp` restarted and active,
 web bundle rebuilt into `packages/web/dist` (so the served app has the page),
 0 unarchived probe tasks, 0 leftover probe sessions.
+
+---
+
+## 7. Phone pass — usability, calendar day detail, and performance
+
+### Calendar: a day said "3" and nothing else
+`MonthGrid` renders chips from `sm:block` and, below that, coloured dots plus a
+count — useless for "which task is due on the 18th?". Two fixes:
+
+- **Task placement was wrong, not just the display.** `eventsOnDay()` filtered
+  tasks by `dueAt` only, so a task *assigned* to a day (`scheduledFor`, the new
+  field from §1) never appeared on the calendar at all. It now lands on both its
+  assigned day and its deadline day, labelled `PLANNED` vs `DUE`.
+- **`DayAgenda`** (`data-testid="day-agenda"`): under the month grid on phones,
+  the tapped day's items are listed with time, kind, category, progress and
+  delegation state. Tapping an empty day says `NOTHING ON THIS DAY.`
+- The tasks query now uses the server-side range (`from`/`to` day keys) instead
+  of downloading every task (limit 200) and filtering in the browser.
+- Month cells carry `data-day` + a real `aria-label` (tests and future deep
+  links can address a specific date).
+
+### Planner (`/planner`) on a phone
+- Week strip is a swipeable row of 84 px day cells (was a 4-up grid that wrapped).
+- Composer stacks on phones; every input/select/button is 44 px tall at that
+  width (`h-11 sm:h-*`), with a full-width primary action.
+- Card actions, checkbox, status buttons and the log controls are 44 px targets.
+- **Found by the phone spec, not by eye:** the planner's checkbox was still
+  24×24 px on a 390 px viewport — the spec's tap-target assertion failed on it.
+
+### Today's Mission ticket redesign
+The ticket was a `flex-wrap` row where the number, checkbox, title, category
+chip, rotated "stamp" and four icon buttons all competed for the same line, so
+rows zig-zagged and pills wrapped mid-word. Rebuilt as one grid
+(checkbox | body | actions): title with a small index, one status pill, a single
+meta line (category · deadline · % done), a slim progress bar, the newest log
+line, and the urgency carried by a coloured left rail (missed/blocked → red, due
+today → red accent, in flight → accent, normal → white). On phones the actions
+drop to their own row at 44 px; on desktop they sit in a third column.
+
+### Performance (measured, not guessed)
+`packages/web/scripts/perf-probe.mjs` drives the app at 390×844 with 4× CPU
+throttling and a ~1.6 Mbps/120 ms link and reports bytes, requests, timings and
+long tasks.
+
+| | before | after |
+|---|---|---|
+| JS on `/planner` (1 request) | 846 kB | **435 kB in 5 requests** |
+| JS on `/` | 846 kB | **427 kB** |
+| image bytes | 136 kB | **0** (logo inlined at 3.6 kB) |
+| longest long task | 730–965 ms | **364–434 ms** |
+
+What produced it:
+- **Route-level code splitting** (`React.lazy` per page in `App.tsx`) plus two
+  vendor buckets — one shared stack, one for gsap. Finer vendor splitting was
+  tried and reverted: it looked tidy in the build log but added round-trips that
+  delayed first paint on a throttled phone.
+- **`vendor-markdown` split out**: react-markdown + rehype-highlight + remark-gfm
+  (122 kB) were in the shared vendor chunk, so every screen — including the
+  phone dashboard — downloaded the chat renderer for nothing.
+- **Logo: 1536×1024 / 136 kB PNG → 192×128 / 3.6 kB WebP** (it renders at 40 px).
+  Encoded with Chromium's canvas (`scripts/shrink-logo.mjs`), no image deps added.
+- **MissionPage stopped animating on phones**: 220-star canvas + per-frame line
+  strokes + a GSAP warp timeline + a looping floating heading became a
+  statically drawn 60-star field with no timeline at all (`lightMotion()`, which
+  also honours `prefers-reduced-motion` and degrades safely where `matchMedia`
+  is missing). The rAF loop also stops when the tab is hidden.
+- **Backdrop blur removed at phone widths** (3 overlays) — a full-screen GPU pass
+  per frame on mobile.
+- **Fewer background refetches**: dashboard/scouts/notifications 15–30 s → 60 s,
+  planner 60 s → 120 s, global `staleTime` 30 s → 60 s. SSE already pushes
+  server-side changes.
+
+Honest caveat: wall-clock "ready" in the harness barely moved (8.19 s → 8.11 s)
+because that profile is dominated by fixed round-trips (page → JS → `/me` →
+route chunk) rather than bytes; the halved JS and CPU work is what shows up as
+scroll/tap jank on the device.
+
+### Verification
+- `pnpm --filter @hermieos/web test:run` — **95/95** (13 files), typecheck clean.
+- `e2e/planner.spec.ts` passes (desktop journey).
+- `e2e/mobile-phone.spec.ts` (new, Pixel-8 viewport, touch) passes: no horizontal
+  overflow on `/planner`, `/calendar`, `/mission`; 44 px tap targets asserted on
+  the real elements; task created with day + deadline from the phone UI; progress
+  logged; calendar agenda lists the task by name; mission ticket shows
+  deadline + `35% DONE`.
+- Both specs are token-driven, so they run on a server with signup disabled.

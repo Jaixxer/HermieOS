@@ -26,3 +26,23 @@ export function PageLoader({ text }: { text?: string }): React.JSX.Element {
     </div>
   );
 }
+
+/**
+ * Fallback while a lazily-loaded route chunk arrives. Deliberately plain — it
+ * renders inside the app shell (which is already painted), so it must not cost
+ * more than the page it is standing in for.
+ */
+export function RouteFallback(): React.JSX.Element {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex min-h-0 min-w-0 flex-1 items-center justify-center p-10"
+    >
+      <div className="flex items-center gap-2.5 font-mono text-[10px] tracking-[0.2em] text-p5-dark-muted">
+        <span className="h-2 w-2 rounded-full bg-accent" />
+        LOADING
+      </div>
+    </div>
+  );
+}

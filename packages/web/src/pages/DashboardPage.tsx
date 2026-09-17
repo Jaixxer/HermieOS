@@ -43,7 +43,7 @@ function useHermesPresence(): HermesPresence {
     queryKey: ['runs', 'presence'],
     queryFn: () => api.runs(5),
     enabled: connected,
-    refetchInterval: 15_000,
+    refetchInterval: 60_000,
   });
   if (user?.schedulerEnabled === false) return 'paused';
   const busy = (data?.runs ?? []).some((r) => r.status === 'dispatched' || r.status === 'running');

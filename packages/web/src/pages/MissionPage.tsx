@@ -46,12 +46,20 @@ function HyperspaceField({ warp, active }: { warp: React.RefObject<{ v: number }
     const ctx = el.getContext('2d');
     if (!ctx) return;
 
+    // Phones get a much lighter field: fewer stars and no warp streak pass.
+    // 220 stars + per-frame line strokes is the single most expensive thing on
+    // this screen, and at 390 px wide nobody can tell the difference between
+    // 220 points and 70.
+    const isSmall = lightMotion();
+    const reduced = isSmall;
+    const starCount = isSmall || reduced ? 60 : 220;
+
     let raf = 0;
     let width = 0;
     let height = 0;
-    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let dpr = Math.min(window.devicePixelRatio || 1, isSmall ? 1.5 : 2);
 
-    const stars: Array<{ x: number; y: number; z: number; hue: 'cream' | 'red'; size: number }> = Array.from({ length: 220 }, () => ({
+    const stars: Array<{ x: number; y: number; z: number; hue: 'cream' | 'red'; size: number }> = Array.from({ length: starCount }, () => ({
       x: (Math.random() - 0.5) * 2,
       y: (Math.random() - 0.5) * 2,
       z: Math.random() * 0.9 + 0.1,
@@ -62,7 +70,7 @@ function HyperspaceField({ warp, active }: { warp: React.RefObject<{ v: number }
     const resize = (): void => {
       width = window.innerWidth;
       height = window.innerHeight;
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      dpr = Math.min(window.devicePixelRatio || 1, isSmall ? 1.5 : 2);
       el.width = width * dpr;
       el.height = height * dpr;
       el.style.width = `${width}px`;
@@ -91,6 +99,20 @@ function HyperspaceField({ warp, active }: { warp: React.RefObject<{ v: number }
         ctx.fill();
       }
     };
+
+    // Reduced motion (or a phone): paint the settled field once and never
+    // start a render loop at all.
+    if (reduced || isSmall) {
+      drawStatic();
+      const onVis = (): void => {
+        if (!document.hidden) drawStatic();
+      };
+      document.addEventListener('visibilitychange', onVis);
+      return () => {
+        window.removeEventListener('resize', resize);
+        document.removeEventListener('visibilitychange', onVis);
+      };
+    }
 
     const frame = (now: number): void => {
       if (!activeRef.current) {
@@ -143,9 +165,21 @@ function HyperspaceField({ warp, active }: { warp: React.RefObject<{ v: number }
     };
     raf = requestAnimationFrame(frame);
 
+    const onVisibility = (): void => {
+      // A backgrounded tab must not burn the phone's battery on a starfield.
+      if (document.hidden) {
+        cancelAnimationFrame(raf);
+      } else if (activeRef.current) {
+        last = performance.now();
+        raf = requestAnimationFrame(frame);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [warp]);
 
@@ -181,6 +215,20 @@ const CATEGORY_TONE: Record<TaskCategory, string> = {
 
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/**
+ * Should this device get the light treatment (no warp run, no starfield loop,
+ * no floating heading)? True on phones and for reduce-motion users — and true
+ * when `matchMedia` does not exist at all (jsdom, older WebViews), because the
+ * animations are a nicety and must never break the screen.
+ */
+function lightMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return true;
+  return (
+    window.matchMedia('(max-width: 767px)').matches ||
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
 }
 
 function isToday(iso: string | null): boolean {
@@ -297,135 +345,161 @@ function ObjectiveTicket({
   const overdue = !done && !!task.dueAt && !isToday(task.dueAt) && startOfDay(new Date(task.dueAt)).getTime() < startOfDay(new Date()).getTime();
   const num = String(index + 1).padStart(2, '0');
 
+  const status = done
+    ? { label: 'CLEARED', cls: 'border-black/20 text-p5-dark-muted' }
+    : task.status === 'blocked'
+      ? { label: 'BLOCKED', cls: 'border-status-failed text-status-failed' }
+      : overdue
+        ? { label: 'OVERDUE', cls: 'border-status-failed text-status-failed' }
+        : task.status === 'in_progress'
+          ? { label: 'ACTIVE', cls: 'border-accent text-accent' }
+          : task.sentToHermesAt
+            ? { label: 'DELEGATED', cls: 'border-accent/60 text-accent' }
+            : { label: 'PENDING', cls: 'border-black/20 text-p5-dark-muted' };
+
+  // One left rail carries the urgency, so the card needs no badge soup:
+  // missed/blocked reads first, then due today, then work in flight.
+  const rail = done
+    ? 'border-l-white/10'
+    : overdue || task.status === 'blocked'
+      ? 'border-l-status-failed'
+      : task.dueAt && isToday(task.dueAt)
+        ? 'border-l-accent'
+        : task.progressPercent > 0
+          ? 'border-l-accent/50'
+          : 'border-l-white/20';
+
   return (
     <li
       className={cn(
-        'group relative flex flex-wrap items-center gap-x-3 gap-y-3 sm:gap-4 border-2 bg-p5-panel px-4 py-4 sm:px-5 transition',
-        done ? 'border-white/10 opacity-55' : 'border-white/25 hover:border-white/70',
-        overdue && 'border-l-4 border-l-accent',
+        'group relative border-2 border-l-4 bg-p5-panel transition',
+        rail,
+        done ? 'border-white/10 opacity-55' : 'border-white/20 hover:border-white/45',
       )}
     >
-      {/* red notch when overdue */}
-      {overdue ? <span className="absolute right-0 top-0 h-5 w-5 bg-accent" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%)' }} /> : null}
-
-      <span className={cn('w-8 shrink-0 font-mono text-[13px] font-bold tabular-nums', done ? 'text-p5-dark-muted/40' : 'text-p5-dark-muted')}>
-        {num}
-      </span>
-
-      {/* Status glyph */}
-      <button
-        type="button"
-        onClick={() => onToggle(task)}
-        disabled={busy}
-        aria-label={done ? 'Mark as not done' : 'Mark as done'}
-        className={cn(
-          'flex h-11 w-11 sm:h-6 sm:w-6 shrink-0 items-center justify-center border-2 transition',
-          done ? 'border-accent bg-accent' : 'border-black/30 hover:border-accent',
-        )}
-      >
-        {done ? <span className="text-[13px] font-black leading-none text-white">✓</span> : null}
-      </button>
-
-      <div className="min-w-0 flex-1">
-        <div className={cn('font-p5-serif text-[19px] leading-tight text-p5-dark', done && 'text-p5-dark-muted/40 line-through')}>
-          {task.title}
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px] tracking-[0.08em] text-p5-dark-muted">
-          {task.dueAt && !done ? (
-            <span className={deadlineLabel(task.dueAt).tone}>{deadlineLabel(task.dueAt).text}</span>
-          ) : null}
-          {task.status === 'in_progress' ? <span className="text-accent">IN PROGRESS</span> : null}
-          {task.sentToHermesAt ? <span className="text-accent">Delegated to Hermes</span> : null}
-        </div>
-
-        {/* Progress — written by the user and by Hermes in the same log. */}
-        {task.progressPercent > 0 ? (
-          <div className="mt-2 flex items-center gap-2">
-            <div className="h-1 w-full max-w-[180px] bg-black/10">
-              <div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${task.progressPercent}%` }} />
-            </div>
-            <span className="font-mono text-[9px] tabular-nums text-p5-dark-muted">{task.progressPercent}%</span>
-          </div>
-        ) : null}
-        {task.latestUpdate ? (
-          <div className="mt-1 truncate font-mono text-[10px] text-p5-dark-muted">
-            <span className={task.latestUpdate.actor === 'hermes' ? 'text-accent' : ''}>
-              {task.latestUpdate.actor === 'hermes' ? 'HERMES' : 'YOU'}
-            </span>
-            : {task.latestUpdate.body}
-          </div>
-        ) : null}
-      </div>
-
-      <span className={cn('shrink-0 border px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em]', categoryTone(task.category))}>
-        {CATEGORY_LABEL[task.category]}
-      </span>
-
-      {/* Status stamp — always visible */}
-      {(() => {
-        const stamp = done
-          ? { label: 'CLEARED', cls: 'border-black/40 text-p5-dark-muted' }
-          : task.status === 'in_progress'
-            ? { label: 'ACTIVE', cls: 'border-accent text-accent' }
-            : overdue
-              ? { label: 'OVERDUE', cls: 'border-status-failed text-status-failed' }
-              : task.sentToHermesAt
-                ? { label: 'DELEGATED', cls: 'border-accent/60 text-accent' }
-                : { label: 'PENDING', cls: 'border-black/25 text-p5-dark-muted' };
-        return (
-          <span
-            className={cn('shrink-0 border px-2 py-1 font-mono text-[9px] font-black tracking-[0.14em]', stamp.cls)}
-            style={{ transform: 'rotate(-2deg)' }}
-          >
-            {stamp.label}
-          </span>
-        );
-      })()}
-
-      <div className="flex shrink-0 items-center gap-1.5 sm:gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
-        {task.sentToHermesAt ? (
-          <a
-            href={`/chat/task-${task.id}`}
-            title="Open the conversation with Hermes"
-            aria-label="Open Hermes conversation"
-            className="flex h-11 w-11 sm:h-7 sm:w-7 items-center justify-center border border-accent/60 text-accent transition hover:bg-accent hover:text-white"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
-        ) : !done ? (
-          <>
-            <button
-              type="button"
-              title="Delegate to Hermes"
-              aria-label="Delegate to Hermes"
-              disabled={busy}
-              onClick={() => onDelegate(task)}
-              className="flex h-11 w-11 sm:h-7 sm:w-7 items-center justify-center border border-black/20 text-p5-dark-muted transition hover:border-accent hover:bg-accent hover:text-white disabled:opacity-40"
-            >
-              <Send className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              title="Defer to tomorrow"
-              aria-label="Defer to tomorrow"
-              disabled={busy}
-              onClick={() => onDefer(task)}
-              className="flex h-11 w-11 sm:h-7 sm:w-7 items-center justify-center border border-black/20 text-p5-dark-muted transition hover:border-p5-dark hover:bg-p5-dark hover:text-white disabled:opacity-40"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
-          </>
-        ) : null}
+      {/* One grid, three columns: checkbox | body | actions. On phones the
+          actions drop to their own full-width row so nothing wraps mid-word
+          and every target stays 44 px. */}
+      <div className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-2 px-3.5 py-3.5 sm:grid-cols-[auto_1fr_auto] sm:gap-x-4 sm:px-4">
         <button
           type="button"
-          title="Archive"
-          aria-label="Archive task"
+          onClick={() => onToggle(task)}
           disabled={busy}
-          onClick={() => onArchive(task)}
-          className="flex h-11 w-11 sm:h-7 sm:w-7 items-center justify-center border border-black/20 text-p5-dark-muted transition hover:border-status-failed hover:text-status-failed disabled:opacity-40"
+          aria-label={done ? 'Mark as not done' : 'Mark as done'}
+          className={cn(
+            'mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center border-2 transition sm:h-6 sm:w-6',
+            done ? 'border-accent bg-accent' : 'border-black/30 hover:border-accent',
+          )}
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          {done ? <span className="text-[15px] font-black leading-none text-white sm:text-[13px]">✓</span> : null}
         </button>
+
+        <div className="min-w-0">
+          <div className="flex items-start justify-between gap-3">
+            <h3
+              className={cn(
+                'min-w-0 font-p5-serif text-[19px] leading-snug text-p5-dark sm:text-[20px]',
+                done && 'text-p5-dark-muted/50 line-through',
+              )}
+            >
+              <span className="mr-2 font-mono text-[11px] font-bold tabular-nums text-p5-dark-muted/60">{num}</span>
+              {task.title}
+            </h3>
+            <span
+              className={cn(
+                'mt-0.5 shrink-0 border px-2 py-0.5 font-mono text-[9px] font-black tracking-[0.14em]',
+                status.cls,
+              )}
+            >
+              {status.label}
+            </span>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] tracking-[0.08em]">
+            <span className={cn('border px-1.5 py-0.5 font-bold uppercase', categoryTone(task.category))}>
+              {CATEGORY_LABEL[task.category]}
+            </span>
+            {task.dueAt ? (
+              <span
+                className={cn(
+                  'border-l border-black/15 pl-2',
+                  done ? 'text-p5-dark-muted' : deadlineLabel(task.dueAt).tone,
+                )}
+              >
+                {deadlineLabel(task.dueAt).text}
+              </span>
+            ) : null}
+            {task.progressPercent > 0 ? (
+              <span className="border-l border-black/15 pl-2 tabular-nums text-p5-dark-muted">
+                {task.progressPercent}% DONE
+              </span>
+            ) : null}
+          </div>
+
+          {/* Progress bar, then the newest line from the shared log. */}
+          {task.progressPercent > 0 && !done ? (
+            <div className="mt-2.5 h-1 w-full bg-black/10">
+              <div
+                className="h-full bg-accent transition-[width] duration-300"
+                style={{ width: `${task.progressPercent}%` }}
+              />
+            </div>
+          ) : null}
+          {task.latestUpdate ? (
+            <div className="mt-2 flex items-baseline gap-1.5 font-mono text-[10px] text-p5-dark-muted">
+              <span className={cn('shrink-0 font-black', task.latestUpdate.actor === 'hermes' && 'text-accent')}>
+                {task.latestUpdate.actor === 'hermes' ? 'HERMES' : 'YOU'}
+              </span>
+              <span className="truncate">{task.latestUpdate.body}</span>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="col-span-2 flex items-center justify-end gap-2 sm:col-span-1 sm:justify-start">
+          {task.sentToHermesAt ? (
+            <a
+              href={`/chat/task-${task.id}`}
+              title="Open the conversation with Hermes"
+              aria-label="Open Hermes conversation"
+              className="flex h-11 w-11 items-center justify-center border border-accent/60 text-accent transition hover:bg-accent hover:text-white sm:h-8 sm:w-8"
+            >
+              <ExternalLink className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+            </a>
+          ) : !done ? (
+            <>
+              <button
+                type="button"
+                title="Delegate to Hermes"
+                aria-label="Delegate to Hermes"
+                disabled={busy}
+                onClick={() => onDelegate(task)}
+                className="flex h-11 w-11 items-center justify-center border border-black/20 text-p5-dark-muted transition hover:border-accent hover:bg-accent hover:text-white disabled:opacity-40 sm:h-8 sm:w-8"
+              >
+                <Send className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+              </button>
+              <button
+                type="button"
+                title="Defer to tomorrow"
+                aria-label="Defer to tomorrow"
+                disabled={busy}
+                onClick={() => onDefer(task)}
+                className="flex h-11 w-11 items-center justify-center border border-black/20 text-p5-dark-muted transition hover:border-p5-dark hover:bg-p5-dark hover:text-white disabled:opacity-40 sm:h-8 sm:w-8"
+              >
+                <ArrowRight className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            title="Archive"
+            aria-label="Archive task"
+            disabled={busy}
+            onClick={() => onArchive(task)}
+            className="flex h-11 w-11 items-center justify-center border border-black/20 text-p5-dark-muted transition hover:border-status-failed hover:text-status-failed disabled:opacity-40 sm:h-8 sm:w-8"
+          >
+            <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+          </button>
+        </div>
       </div>
     </li>
   );
@@ -545,6 +619,16 @@ export function MissionPage(): React.JSX.Element {
   React.useLayoutEffect(() => {
     const content = contentRef.current;
     if (!content) return;
+
+    // Phones (and anyone who asked for less motion) get the settled state
+    // immediately: no GSAP timeline, no warp run, no animation frames. The
+    // reveal is a nicety; a stuttering first paint is not.
+    if (lightMotion()) {
+      gsap.set(content, { opacity: 1, y: 0 });
+      setStarFieldActive(false);
+      return;
+    }
+
     const tl = gsap.timeline({
       onComplete: () => setStarFieldActive(false),
     });
@@ -558,8 +642,10 @@ export function MissionPage(): React.JSX.Element {
     return () => { tl.kill(); };
   }, []);
 
-  // Gentle float for the briefing heading.
+  // Gentle float for the briefing heading (desktop only — a permanently
+  // animating heading is pure paint cost on a phone).
   React.useEffect(() => {
+    if (lightMotion()) return;
     const tween = gsap.to(titleRef.current, {
       y: -7,
       duration: 2.8,
