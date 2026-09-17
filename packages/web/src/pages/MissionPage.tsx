@@ -505,6 +505,67 @@ function ObjectiveTicket({
   );
 }
 
+/**
+ * Today's Mission quick-add.
+ *
+ * Owns its own draft so a keystroke here does not re-render the board: with the
+ * draft in MissionPage, every character re-rendered every objective ticket,
+ * which is what made typing feel laggy on a phone.
+ */
+function MissionQuickAdd({ onCreated }: { onCreated: () => void }): React.JSX.Element {
+  const [draft, setDraft] = React.useState('');
+  const [category, setCategory] = React.useState<TaskCategory>('work');
+
+  const createMut = useMutation({
+    mutationFn: (input: { title: string; category: TaskCategory }) => api.createTask(input),
+    onSuccess: onCreated,
+  });
+
+  const submit = (e: React.FormEvent): void => {
+    e.preventDefault();
+    const title = draft.trim();
+    if (!title) return;
+    createMut.mutate({ title, category });
+    setDraft('');
+  };
+
+  return (
+    <div className="relative overflow-hidden border-2 border-white/20 bg-p5-panel p-4">
+                <div className="absolute inset-y-0 left-0 w-1 bg-accent" />
+                <div className="relative flex flex-wrap items-center gap-3">
+                  <div className="p5-kicker text-p5-dark shrink-0">NEW OBJECTIVE</div>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value as TaskCategory)}
+                    className="h-12 sm:h-8 border border-black/25 bg-white px-2 font-mono text-[12px] sm:text-[11px] text-p5-dark outline-none focus:border-accent"
+                    aria-label="Category"
+                  >
+                    {(Object.keys(CATEGORY_LABEL) as TaskCategory[]).map((c) => (
+                      <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>
+                    ))}
+                  </select>
+                  <form className="flex min-w-0 flex-1 items-center gap-3" onSubmit={submit}>
+                    <input
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      placeholder="Add a task…"
+                      enterKeyHint="done"
+                      className="min-w-0 flex-1 border-0 border-b border-black/25 bg-transparent px-0 pb-1 h-12 sm:h-auto text-[16px] sm:text-[14px] text-p5-dark outline-none placeholder:text-p5-dark-muted focus:border-accent"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!draft.trim() || createMut.isPending}
+                      aria-label=""
+                      className="flex h-12 w-12 sm:h-9 sm:w-9 shrink-0 items-center justify-center bg-accent text-white transition hover:bg-accent-hover disabled:opacity-40"
+                    >
+                      {createMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                    </button>
+                  </form>
+                </div>
+              </div>
+  );
+}
+
 // ============================================================================
 // Page
 // ============================================================================
@@ -512,8 +573,6 @@ function ObjectiveTicket({
 export function MissionPage(): React.JSX.Element {
   const { connected } = useServer();
   const qc = useQueryClient();
-  const [draft, setDraft] = React.useState('');
-  const [category, setCategory] = React.useState<TaskCategory>('work');
   const [showOverdue, setShowOverdue] = React.useState(false);
 
   const invalidate = (): void => {
@@ -539,11 +598,7 @@ export function MissionPage(): React.JSX.Element {
     refetchInterval: 60_000,
   });
 
-  const createMut = useMutation({
-    mutationFn: (input: { title: string; category: TaskCategory }) => api.createTask(input),
-    onSuccess: invalidate,
-  });
-  const updateMut = useMutation({
+ const updateMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: TaskStatus }) => api.updateTask(id, { status }),
     onSuccess: invalidate,
   });
@@ -597,14 +652,6 @@ export function MissionPage(): React.JSX.Element {
   const completedCount = analytics?.today.completed ?? 0;
   const totalCount = analytics?.today.total ?? 0;
   const completionRate = totalCount > 0 ? completedCount / totalCount : 0;
-
-  const submit = (e: React.FormEvent): void => {
-    e.preventDefault();
-    const title = draft.trim();
-    if (!title) return;
-    createMut.mutate({ title, category });
-    setDraft('');
-  };
 
   const today = new Date();
   const dayStamp = today.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
@@ -773,40 +820,7 @@ export function MissionPage(): React.JSX.Element {
 
             {/* Right: the board — tickets + new objective */}
             <section className="lg:col-span-7">
-              {/* New objective — cream console, the only bright strip */}
-              <div className="relative overflow-hidden border-2 border-white/20 bg-p5-panel p-4">
-                <div className="absolute inset-y-0 left-0 w-1 bg-accent" />
-                <div className="relative flex flex-wrap items-center gap-3">
-                  <div className="p5-kicker text-p5-dark shrink-0">NEW OBJECTIVE</div>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value as TaskCategory)}
-                    className="h-12 sm:h-8 border border-black/25 bg-white px-2 font-mono text-[12px] sm:text-[11px] text-p5-dark outline-none focus:border-accent"
-                    aria-label="Category"
-                  >
-                    {(Object.keys(CATEGORY_LABEL) as TaskCategory[]).map((c) => (
-                      <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>
-                    ))}
-                  </select>
-                  <form className="flex min-w-0 flex-1 items-center gap-3" onSubmit={submit}>
-                    <input
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      placeholder="Add a task…"
-                      enterKeyHint="done"
-                      className="min-w-0 flex-1 border-0 border-b border-black/25 bg-transparent px-0 pb-1 h-12 sm:h-auto text-[16px] sm:text-[14px] text-p5-dark outline-none placeholder:text-p5-dark-muted focus:border-accent"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!draft.trim() || createMut.isPending}
-                      aria-label=""
-                      className="flex h-12 w-12 sm:h-9 sm:w-9 shrink-0 items-center justify-center bg-accent text-white transition hover:bg-accent-hover disabled:opacity-40"
-                    >
-                      {createMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-                    </button>
-                  </form>
-                </div>
-              </div>
+              <MissionQuickAdd onCreated={invalidate} />
 
               {/* Log header */}
               <div className="mb-4 mt-6 flex items-end justify-between">

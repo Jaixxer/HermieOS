@@ -225,3 +225,60 @@ scroll/tap jank on the device.
   logged; calendar agenda lists the task by name; mission ticket shows
   deadline + `35% DONE`.
 - Both specs are token-driven, so they run on a server with signup disabled.
+
+---
+
+## 8. Interaction latency — the real "it lags while typing"
+
+§7 measured *startup*; the user's actual complaint was interaction: consistent
+lag, including on every keystroke. That is not a bundle problem, so it needed its
+own instrument: `packages/web/scripts/interaction-probe.mjs` types 25 characters
+into a screen's main input at 390×844 with 4× CPU throttling and reports, per
+key: wall time, Event-Timing events over the 16 ms frame budget, the worst one,
+total event-processing time, and DOM mutations.
+
+Baseline on `/planner` was damning:
+
+| | before | after |
+|---|---|---|
+| per keystroke | 96 ms | **58 ms** |
+| worst input event | 104 ms | **56 ms** |
+| event processing, 25 keys | 3472 ms | **1832 ms** |
+
+Root cause: **the composers' state lived in the page components.** On
+`/planner`, `title`/`category`/`assignDay`/`deadline`/`notes`/`guidance` sat in
+`TasksPage`, so every character re-rendered the page — week strip, every card,
+every open progress log, every nested query consumer. `MissionPage`'s quick-add
+had the same shape (`draft`/`category` at page level). On chat, the composer
+lives in the same component as the transcript, so each keystroke re-rendered
+every message bubble — re-parsing markdown and re-highlighting code per
+character.
+
+Changes:
+- **`TaskComposer` and `MissionQuickAdd` are their own components**, owning their
+  draft state and their create mutation. A keystroke now re-renders a form and
+  nothing else.
+- **`MessageBubble` / `MarkdownContent` are memoised** (`React.memo`), so the
+  chat transcript is skipped entirely while typing. Message objects come from the
+  query cache, so their identity is stable.
+- **`CalendarPage` buckets items by day once per data change** (`itemsByDay`)
+  instead of filtering every event/task/upcoming item for each of the 42 month
+  cells on every render — 42 × N passes became N.
+- Global `keydown` listeners were audited: the palette and notification bell act
+  only on cmd-K / Escape and toggle nothing per keystroke.
+
+Scroll frame times (p95, same profile) also came down: `/planner` 17 ms with
+0 frames over 32 ms, from 17 ms with 2.
+
+Caveat, stated plainly: **58 ms per key is still over the 16 ms frame budget**
+under 4× CPU throttling on this box. The remaining cost is React render + paint
+under throttle rather than DOM churn (mutations per key measured 0), and a real
+phone is faster than this profile — but the honest next step is a React DevTools
+profile of the composer subtree, or turning on the React Compiler, before
+claiming typing is solved.
+
+`/mission` and `/chat` typing could not be measured on this box: their inputs did
+not appear inside the probe's 30 s window at 4× throttle (the same lazy-chunk
+boot the planner passed only because it waited on a text anchor first). Their
+composers got the identical mechanical fix and are covered by the unit suites
+(13 files / 95 tests) and the two e2e specs.

@@ -40,6 +40,12 @@ interface ScheduleItem {
   planned?: boolean;
 }
 
+/** Local midnight for a YYYY-MM-DD key. */
+function parseDayKey(key: string): Date {
+  const [y, m, d] = key.split('-').map((n) => parseInt(n, 10));
+  return new Date(y!, (m ?? 1) - 1, d ?? 1);
+}
+
 /** Local calendar day as YYYY-MM-DD — the unit tasks are scheduled in. */
 function dayKeyOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -143,32 +149,67 @@ export function CalendarPage(): React.JSX.Element {
     await qc.invalidateQueries({ queryKey: ['calendar'] });
   }
 
-  const eventsOnDay = React.useCallback(
-    (d: Date): ScheduleItem[] => {
-      const evs: ScheduleItem[] = (events.data?.events ?? [])
-        .filter((e) => isSameDay(new Date(e.startsAt), d))
-        .map((e) => ({ kind: 'event' as const, id: e.id, title: e.title, date: new Date(e.startsAt), event: e }));
-      const key = dayKeyOf(d);
-      const tasks: ScheduleItem[] = (calendarTasks.data?.tasks ?? [])
-        .filter((t) => t.status !== 'done' && t.status !== 'cancelled')
-        .map((t): ScheduleItem | null => {
-          const due = t.dueAt ? new Date(t.dueAt) : null;
-          if (due && isSameDay(due, d)) {
-            return { kind: 'task', id: t.id, title: t.title, date: due, task: t, planned: false };
-          }
-          if (t.scheduledFor === key) {
-            return { kind: 'task', id: t.id, title: t.title, date: startOfDay(d), task: t, planned: true };
-          }
-          return null;
-        })
-        .filter((x): x is ScheduleItem => x !== null);
-      const upcoming: ScheduleItem[] = (calendarUpcoming.data?.items ?? [])
-        .filter((u) => !u.completedAt && isSameDay(new Date(u.occursAt), d))
-        .map((u) => ({ kind: 'upcoming' as const, id: u.id, title: u.title, date: new Date(u.occursAt), upcoming: u }));
-      return [...evs, ...tasks, ...upcoming].sort((a, b) => a.date.getTime() - b.date.getTime());
-    },
-    [events.data, calendarTasks.data, calendarUpcoming.data],
-  );
+  /**
+   * Bucket the whole window by day ONCE per data change.
+   *
+   * `MonthGrid` renders 42 cells and called a filter over every event, task and
+   * upcoming item for each one — 42 × N passes on every render, including each
+   * keystroke in the event modal. This is N passes total.
+   */
+  const itemsByDay = React.useMemo(() => {
+    const map = new Map<string, ScheduleItem[]>();
+    const push = (key: string, item: ScheduleItem): void => {
+      const arr = map.get(key);
+      if (arr) arr.push(item);
+      else map.set(key, [item]);
+    };
+
+    for (const e of events.data?.events ?? []) {
+      push(dayKeyOf(new Date(e.startsAt)), {
+        kind: 'event',
+        id: e.id,
+        title: e.title,
+        date: new Date(e.startsAt),
+        event: e,
+      });
+    }
+
+    for (const t of calendarTasks.data?.tasks ?? []) {
+      if (t.status === 'done' || t.status === 'cancelled') continue;
+      const due = t.dueAt ? new Date(t.dueAt) : null;
+      if (due) {
+        push(dayKeyOf(due), { kind: 'task', id: t.id, title: t.title, date: due, task: t, planned: false });
+      }
+      // A task assigned to a day also shows there, unless that is already its
+      // deadline day (then the DUE entry above is the one to show).
+      if (t.scheduledFor && (!due || dayKeyOf(due) !== t.scheduledFor)) {
+        push(t.scheduledFor, {
+          kind: 'task',
+          id: t.id,
+          title: t.title,
+          date: startOfDay(parseDayKey(t.scheduledFor)),
+          task: t,
+          planned: true,
+        });
+      }
+    }
+
+    for (const u of calendarUpcoming.data?.items ?? []) {
+      if (u.completedAt) continue;
+      push(dayKeyOf(new Date(u.occursAt)), {
+        kind: 'upcoming',
+        id: u.id,
+        title: u.title,
+        date: new Date(u.occursAt),
+        upcoming: u,
+      });
+    }
+
+    for (const arr of map.values()) arr.sort((a, b) => a.date.getTime() - b.date.getTime());
+    return map;
+  }, [events.data, calendarTasks.data, calendarUpcoming.data]);
+
+  const eventsOnDay = React.useCallback((d: Date): ScheduleItem[] => itemsByDay.get(dayKeyOf(d)) ?? [], [itemsByDay]);
 
   function navigate(direction: number): void {
     const c = new Date(cursor);

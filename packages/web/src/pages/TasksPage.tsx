@@ -213,15 +213,6 @@ export function TasksPage(): React.JSX.Element {
   const [day, setDay] = React.useState<string>(todayKey());
   const [expanded, setExpanded] = React.useState<string | null>(null);
 
-  // composer
-  const [title, setTitle] = React.useState('');
-  const [category, setCategory] = React.useState<TaskCategory>('work');
-  const [assignDay, setAssignDay] = React.useState<string>(todayKey());
-  const [deadline, setDeadline] = React.useState('');
-  const [notes, setNotes] = React.useState('');
-  const [guidance, setGuidance] = React.useState('');
-  const [showMore, setShowMore] = React.useState(false);
-
   // delegate sheet
   const [delegating, setDelegating] = React.useState<Task | null>(null);
   const [delegateNote, setDelegateNote] = React.useState('');
@@ -267,24 +258,6 @@ export function TasksPage(): React.JSX.Element {
     refetchInterval: 120_000,
   });
 
-  const createMut = useMutation({
-    mutationFn: (input: {
-      title: string;
-      category: TaskCategory;
-      scheduledFor?: string;
-      dueAt?: string;
-      notes?: string;
-      delegateNote?: string;
-    }) => api.createTask(input),
-    onSuccess: () => {
-      setTitle('');
-      setDeadline('');
-      setNotes('');
-      setGuidance('');
-      invalidate();
-    },
-  });
-
   const updateMut = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Parameters<typeof api.updateTask>[1] }) =>
       api.updateTask(id, patch),
@@ -319,20 +292,6 @@ export function TasksPage(): React.JSX.Element {
       invalidate(vars.id);
     },
   });
-
-  const submit = (e: React.FormEvent): void => {
-    e.preventDefault();
-    const t = title.trim();
-    if (!t) return;
-    createMut.mutate({
-      title: t,
-      category,
-      scheduledFor: assignDay || undefined,
-      dueAt: deadline ? new Date(deadline).toISOString() : undefined,
-      notes: notes.trim() || undefined,
-      delegateNote: guidance.trim() || undefined,
-    });
-  };
 
   const openDelegate = (task: Task): void => {
     setDelegateNote(task.delegateNote ?? '');
@@ -402,103 +361,7 @@ export function TasksPage(): React.JSX.Element {
           </header>
 
           {/* ─── Composer ─── */}
-          <form onSubmit={submit} className="mt-6 border-2 border-p5-dark bg-white">
-            <div className="flex flex-wrap items-center gap-3 border-b border-black/10 px-4 py-3">
-              <span className="p5-kicker shrink-0 text-p5-dark-muted">NEW TASK</span>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="What needs doing?"
-                className="min-w-[200px] flex-1 border-0 border-b border-black/25 bg-transparent px-0 pb-1 text-[15px] outline-none placeholder:text-p5-dark-muted focus:border-accent"
-              />
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value as TaskCategory)}
-                aria-label="Category"
-                className="h-11 border border-black/25 bg-white px-2 font-mono text-[11px] outline-none focus:border-accent sm:h-9"
-              >
-                {(Object.keys(CATEGORY_LABEL) as TaskCategory[]).map((c) => (
-                  <option key={c} value={c}>
-                    {CATEGORY_LABEL[c]}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5">
-              <label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted">
-                <CalendarDays className="h-3.5 w-3.5" />
-                DAY
-                <input
-                  type="date"
-                  value={assignDay}
-                  onChange={(e) => setAssignDay(e.target.value)}
-                  className="h-8 border border-black/25 bg-white px-2 font-mono text-[11px] text-p5-dark outline-none focus:border-accent"
-                />
-              </label>
-              <label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted">
-                <Clock className="h-3.5 w-3.5" />
-                DEADLINE
-                <input
-                  type="datetime-local"
-                  value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
-                  className="h-8 border border-black/25 bg-white px-2 font-mono text-[11px] text-p5-dark outline-none focus:border-accent"
-                />
-              </label>
-              {deadline ? (
-                <button
-                  type="button"
-                  onClick={() => setDeadline('')}
-                  className="font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted underline hover:text-accent"
-                >
-                  CLEAR DEADLINE
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setShowMore((v) => !v)}
-                aria-expanded={showMore}
-                className="flex min-h-[44px] items-center gap-1 font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted hover:text-accent sm:ml-auto sm:min-h-0"
-              >
-                {showMore ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                NOTES &amp; GUIDANCE FOR HERMES
-              </button>
-              <button
-                type="submit"
-                disabled={!title.trim() || createMut.isPending}
-                className="flex h-11 w-full items-center justify-center gap-1.5 bg-accent px-4 font-mono text-[10px] font-black tracking-[0.14em] text-white transition hover:bg-accent-hover disabled:opacity-40 sm:h-9 sm:w-auto"
-              >
-                {createMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                ADD TASK
-              </button>
-            </div>
-
-            {showMore ? (
-              <div className="grid grid-cols-1 gap-3 border-t border-black/10 px-4 py-3 md:grid-cols-2">
-                <label className="flex flex-col gap-1">
-                  <span className="p5-kicker text-p5-dark-muted">NOTES</span>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={3}
-                    placeholder="Details, links, constraints…"
-                    className="w-full resize-none border border-black/20 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-accent"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="p5-kicker text-accent">GUIDANCE FOR HERMES</span>
-                  <textarea
-                    value={guidance}
-                    onChange={(e) => setGuidance(e.target.value)}
-                    rows={3}
-                    placeholder="How should Hermes go about this? e.g. draft in one page, cite sources, stop before anything irreversible…"
-                    className="w-full resize-none border border-black/20 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-accent"
-                  />
-                </label>
-              </div>
-            ) : null}
-          </form>
+          <TaskComposer onCreated={invalidate} />
 
           {/* ─── View switch ─── */}
           <div className="mt-7 flex items-center gap-2 overflow-x-auto pb-1 sm:flex-wrap">
@@ -692,6 +555,156 @@ export function TasksPage(): React.JSX.Element {
         ) : null}
       </Sheet>
     </div>
+  );
+}
+
+/**
+ * The task composer.
+ *
+ * It owns its draft state deliberately. With these fields living in TasksPage,
+ * every keystroke re-rendered the whole board — week strip, every card, every
+ * open progress log — which measured ~96 ms per key on a phone profile.
+ * Isolated here, a keystroke re-renders this form and nothing else.
+ */
+function TaskComposer({ onCreated }: { onCreated: () => void }): React.JSX.Element {
+  const [title, setTitle] = React.useState('');
+  const [category, setCategory] = React.useState<TaskCategory>('work');
+  const [assignDay, setAssignDay] = React.useState<string>(todayKey());
+  const [deadline, setDeadline] = React.useState('');
+  const [notes, setNotes] = React.useState('');
+  const [guidance, setGuidance] = React.useState('');
+  const [showMore, setShowMore] = React.useState(false);
+
+  const createMut = useMutation({
+    mutationFn: (input: {
+      title: string;
+      category: TaskCategory;
+      scheduledFor?: string;
+      dueAt?: string;
+      notes?: string;
+      delegateNote?: string;
+    }) => api.createTask(input),
+    onSuccess: () => {
+      setTitle('');
+      setDeadline('');
+      setNotes('');
+      setGuidance('');
+      onCreated();
+    },
+  });
+
+  const submit = (e: React.FormEvent): void => {
+    e.preventDefault();
+    const t = title.trim();
+    if (!t) return;
+    createMut.mutate({
+      title: t,
+      category,
+      scheduledFor: assignDay || undefined,
+      dueAt: deadline ? new Date(deadline).toISOString() : undefined,
+      notes: notes.trim() || undefined,
+      delegateNote: guidance.trim() || undefined,
+    });
+  };
+
+  return (
+          <form onSubmit={submit} className="mt-6 border-2 border-p5-dark bg-white">
+            <div className="flex flex-wrap items-center gap-3 border-b border-black/10 px-4 py-3">
+              <span className="p5-kicker shrink-0 text-p5-dark-muted">NEW TASK</span>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="What needs doing?"
+                className="min-w-[200px] flex-1 border-0 border-b border-black/25 bg-transparent px-0 pb-1 text-[15px] outline-none placeholder:text-p5-dark-muted focus:border-accent"
+              />
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as TaskCategory)}
+                aria-label="Category"
+                className="h-11 border border-black/25 bg-white px-2 font-mono text-[11px] outline-none focus:border-accent sm:h-9"
+              >
+                {(Object.keys(CATEGORY_LABEL) as TaskCategory[]).map((c) => (
+                  <option key={c} value={c}>
+                    {CATEGORY_LABEL[c]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5">
+              <label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted">
+                <CalendarDays className="h-3.5 w-3.5" />
+                DAY
+                <input
+                  type="date"
+                  value={assignDay}
+                  onChange={(e) => setAssignDay(e.target.value)}
+                  className="h-8 border border-black/25 bg-white px-2 font-mono text-[11px] text-p5-dark outline-none focus:border-accent"
+                />
+              </label>
+              <label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted">
+                <Clock className="h-3.5 w-3.5" />
+                DEADLINE
+                <input
+                  type="datetime-local"
+                  value={deadline}
+                  onChange={(e) => setDeadline(e.target.value)}
+                  className="h-8 border border-black/25 bg-white px-2 font-mono text-[11px] text-p5-dark outline-none focus:border-accent"
+                />
+              </label>
+              {deadline ? (
+                <button
+                  type="button"
+                  onClick={() => setDeadline('')}
+                  className="font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted underline hover:text-accent"
+                >
+                  CLEAR DEADLINE
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setShowMore((v) => !v)}
+                aria-expanded={showMore}
+                className="flex min-h-[44px] items-center gap-1 font-mono text-[10px] tracking-[0.12em] text-p5-dark-muted hover:text-accent sm:ml-auto sm:min-h-0"
+              >
+                {showMore ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                NOTES &amp; GUIDANCE FOR HERMES
+              </button>
+              <button
+                type="submit"
+                disabled={!title.trim() || createMut.isPending}
+                className="flex h-11 w-full items-center justify-center gap-1.5 bg-accent px-4 font-mono text-[10px] font-black tracking-[0.14em] text-white transition hover:bg-accent-hover disabled:opacity-40 sm:h-9 sm:w-auto"
+              >
+                {createMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                ADD TASK
+              </button>
+            </div>
+
+            {showMore ? (
+              <div className="grid grid-cols-1 gap-3 border-t border-black/10 px-4 py-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1">
+                  <span className="p5-kicker text-p5-dark-muted">NOTES</span>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                    placeholder="Details, links, constraints…"
+                    className="w-full resize-none border border-black/20 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-accent"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="p5-kicker text-accent">GUIDANCE FOR HERMES</span>
+                  <textarea
+                    value={guidance}
+                    onChange={(e) => setGuidance(e.target.value)}
+                    rows={3}
+                    placeholder="How should Hermes go about this? e.g. draft in one page, cite sources, stop before anything irreversible…"
+                    className="w-full resize-none border border-black/20 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-accent"
+                  />
+                </label>
+              </div>
+            ) : null}
+          </form>
   );
 }
 

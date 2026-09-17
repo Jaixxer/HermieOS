@@ -1735,7 +1735,7 @@ function ChatView({ info, sessionId, model: sessionModelProp, onSelect, allSessi
                 {allMessages
                   .filter((m) => !(m.role === 'assistant' && !m.content))
                   .map((m) => (
-                    <MessageBubble key={String(m.id)} message={m} />
+                    <MemoMessageBubble key={String(m.id)} message={m} />
                   ))}
                 {sending ? (
                   <div className="flex items-center gap-3">
@@ -2058,7 +2058,7 @@ function MessageBubble({ message }: { message: HermesMessage }): React.JSX.Eleme
               : 'bg-p5-ink text-p5-text',
           )}
         >
-          <MarkdownContent content={message.content} />
+          <MemoMarkdownContent content={message.content} />
         </div>
       </div>
     </div>
@@ -2108,3 +2108,15 @@ function SlashCommandMenu({
     </div>
   );
 }
+
+/**
+ * Memoised renderers.
+ *
+ * The composer lives in the same component as the transcript, so without this
+ * every keystroke re-rendered every message — re-parsing markdown and
+ * re-highlighting code blocks on each character typed. Message objects are
+ * stable (they come from the query cache), so memo skips the whole transcript
+ * while the user types.
+ */
+const MemoMessageBubble = React.memo(MessageBubble);
+const MemoMarkdownContent = React.memo(MarkdownContent);
