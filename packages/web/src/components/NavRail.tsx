@@ -6,7 +6,7 @@
  */
 import * as React from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, Calendar, Crosshair, ListChecks, MessageSquare, Settings, Target } from 'lucide-react';
+import { Activity, Calendar, CheckCircle2, Crosshair, MessageSquare, Settings, Target } from 'lucide-react';
 import { useAuth } from '../auth';
 import { useServer } from '../server';
 import { cn } from '../lib/utils';
@@ -18,7 +18,7 @@ const NAV_ITEMS = [
   { to: '/chat', num: '04', label: 'Command', subtitle: 'Talk with Hermes', icon: MessageSquare },
   { to: '/feed', num: '05', label: 'Feed', subtitle: 'Activity stream', icon: Activity },
   { to: '/calendar', num: '06', label: 'Calendar', subtitle: 'Schedule & sync', icon: Calendar },
-  { to: '/planner', num: '07', label: 'Tasks', subtitle: 'Plan & delegate', icon: ListChecks },
+  { to: '/mission', num: '07', label: 'Mission', subtitle: "Today's board", icon: CheckCircle2 },
   { to: '/settings', num: '08', label: 'Settings', subtitle: 'System & prefs', icon: Settings },
 ] as const;
 

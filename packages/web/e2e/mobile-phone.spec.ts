@@ -59,6 +59,30 @@ async function expectTapTargets(page: import('@playwright/test').Page, labels: s
   }
 }
 
+test('missions is a destination again and the planner is reached from Home', async ({ page }) => {
+  await page.addInitScript(
+    ([base, token]) => {
+      localStorage.setItem('hermieos_server_url', base);
+      localStorage.setItem('hermieos_mcp_token', token);
+      localStorage.setItem('hermieos_api_base', base);
+    },
+    [API_BASE, TOKEN],
+  );
+
+  // Home carries the planner entry point...
+  await page.goto('/');
+  const planLink = page.locator('a[href="/planner"]');
+  await expect(planLink.first()).toBeVisible({ timeout: 30000 });
+  await planLink.first().click();
+  await expect(page.getByText('NEW TASK')).toBeVisible({ timeout: 30000 });
+
+  // ...and the TASKS tab goes to the mission board, not the planner.
+  const tasksTab = page.locator('a[href="/mission"]').filter({ hasText: 'TASKS' });
+  await expect(tasksTab.first()).toBeVisible();
+  await tasksTab.first().click();
+  await expect(page.getByRole('heading', { name: /today's mission/i })).toBeVisible({ timeout: 30000 });
+});
+
 test('planner and calendar are usable with a thumb', async ({ page, request }) => {
   const title = `phone e2e ${randomBytes(3).toString('hex')}`;
 

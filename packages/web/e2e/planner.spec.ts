@@ -89,6 +89,14 @@ test('planner schedules a task to a day, logs progress and shows the deadline', 
     await expect(page.getByText(title)).toBeVisible();
     await expect(page.getByText(/DEADLINE (TODAY|TOMORROW)/i).first()).toBeVisible();
 
+    // 4b. Navigation: Missions is a rail destination again; the planner is
+    //     reached from Home (the rail no longer carries a Tasks tab).
+    const rail = page.locator('aside nav').first();
+    await expect(rail.locator('a[href="/mission"]')).toHaveCount(1);
+    await expect(rail.locator('a[href="/planner"]')).toHaveCount(0);
+    await page.goto('/');
+    await expect(page.locator('a[href="/planner"]').first()).toBeVisible();
+
     // 5. The other views resolve: delegated (empty for this task) and the
     //    30-day deadline view (which must list it).
     await page.goto('/planner');

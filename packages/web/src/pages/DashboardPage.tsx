@@ -423,14 +423,16 @@ export function DashboardPage(): React.JSX.Element {
                     </div>
                   </Link>
 
-                  {/* TASKS — the white one: black chip kicker, notched corner, heavy bottom rule */}
-                  <Link
-                    to="/mission"
+                  {/* TASKS — the white one: black chip kicker, notched corner, heavy bottom rule.
+                      One card, two destinations and NO nested anchors: a stretched link
+                      covers the card for Missions, and the planner action sits above it
+                      on its own z-layer. */}
+                  <div
                     className="relative min-h-[236px] overflow-hidden border border-black/20 border-b-4 border-b-p5-ink bg-p5-panel p-6 p5-panel p5-hover-lift p5-anim-slide group md:col-span-4 md:mt-1.5"
                     style={{ animationDelay: '180ms' }}
                   >
                     <CheckCircle2 className="absolute -right-2 -bottom-2 w-24 h-24 text-black/[0.04] pointer-events-none" />
-                    <span className="inline-block bg-p5-ink px-2.5 py-1 font-mono text-[9px] font-bold tracking-[0.2em] text-white">TODAY'S MISSION</span>
+                    <span className="inline-block bg-p5-ink px-2.5 py-1 font-mono text-[9px] font-bold tracking-[0.2em] text-white">TODAY&apos;S MISSION</span>
                     <CountNumber value={tasksToday} className="text-p5-ink mt-2" />
                     <p className="mt-1 max-w-[200px] text-[12px] leading-snug text-p5-ink/70">
                       {tasksToday === 0
@@ -440,7 +442,19 @@ export function DashboardPage(): React.JSX.Element {
                     <div className="absolute bottom-5 left-6 flex items-center gap-1 min-h-[44px] text-[11px] font-black tracking-[0.12em] text-p5-ink/80 group-hover:text-p5-ink transition">
                       OPEN MISSIONS <ArrowRight className="w-3 h-3" />
                     </div>
-                  </Link>
+
+                    {/* The planner (day scheduling, deadlines, delegation) is reached
+                        from here — one level in, not a nav destination. */}
+                    <Link
+                      to="/planner"
+                      className="absolute bottom-3 right-3 z-20 flex min-h-[44px] items-center gap-1 border border-black/20 bg-white px-3 font-mono text-[10px] font-black tracking-[0.12em] text-p5-ink/70 transition hover:border-accent hover:text-accent sm:bottom-4"
+                    >
+                      PLAN &amp; DELEGATE <ArrowRight className="w-3 h-3" />
+                    </Link>
+
+                    {/* Stretched link: the whole card opens the mission board. */}
+                    <Link to="/mission" aria-label="Open today's mission board" className="absolute inset-0 z-10" />
+                  </div>
 
                   {/* APPROVALS — the stamp: yellow chip kicker, misregistered ring around the number,
                       and the actual pending decisions listed below instead of a dead count */}
