@@ -6,8 +6,8 @@ import cookie from '@fastify/cookie';
 import * as ssePluginModule from '@fastify/sse';
 import fastifyStatic from '@fastify/static';
 import cors from '@fastify/cors';
-import Fastify, { type FastifyInstance } from 'fastify';
-import { loggerOptions } from './logger.js';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import { getLogger } from './logger.js';
 import { buildContext } from './context.js';
 import { registerAuthDecorators, SESSION_COOKIE_NAME, getSessionUser } from './auth-middleware.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -33,10 +33,13 @@ export async function buildApp(): Promise<FastifyInstance> {
   const webDist = resolve(__dirname, '..', '..', 'web', 'dist');
 
   const app = Fastify({
-    logger: loggerOptions(),
+    // Reuse the process-wide logger instead of building a second pino instance:
+    // every pino instance with a pino-pretty transport costs a worker thread
+    // plus a 4 MB SharedArrayBuffer. See logger.ts.
+    loggerInstance: getLogger(),
     genReqId: (req) => req.headers['x-request-id']?.toString() ?? randomUUID(),
     bodyLimit: 1024 * 1024, // 1 MiB
-  });
+  } as FastifyServerOptions);
 
   // Strip ETag + last-modified + cache-control: public on every API response.
   // These are all dynamic JSON endpoints — we never want the browser to
